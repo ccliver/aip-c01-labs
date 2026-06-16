@@ -1,0 +1,228 @@
+version: '3'
+
+tasks:
+
+  default:
+    silent: true
+    cmds:
+      - task -l
+
+  # ─── Shared modules ────────────────────────────────────────────────────────
+  # Modules are consumed by scenarios via local module references and are not
+  # deployed independently. This task validates that each module is well-formed.
+
+  shared:up:
+    desc: Validate all shared Terraform modules
+    cmds:
+      - for m in vpc iam_roles s3 lambda_base; do
+          printf "\n--- modules/$$m ---\n";
+          terraform -chdir=modules/$$m init -backend=false -input=false -no-color 2>&1 | tail -1;
+          terraform -chdir=modules/$$m validate;
+        done
+
+  # ─── Internal sentinel ─────────────────────────────────────────────────────
+  # Scenarios 02, 03, and 09 call this task as a dependency. It runs
+  # scenario-01:up only when the state file does not yet exist.
+
+  _ensure-01:
+    internal: true
+    cmds:
+      - task: scenario-01:up
+    status:
+      - test -f scenario-01-embeddings/terraform.tfstate
+
+  # ─── Scenario 01 — Embeddings ─────────────────────────────────────────────
+
+  scenario-01:plan:
+    desc: Preview scenario-01-embeddings changes
+    cmds:
+      - terraform -chdir=scenario-01-embeddings init -input=false
+      - terraform -chdir=scenario-01-embeddings plan
+
+  scenario-01:up:
+    desc: Deploy scenario-01-embeddings
+    cmds:
+      - terraform -chdir=scenario-01-embeddings init -input=false
+      - terraform -chdir=scenario-01-embeddings apply -auto-approve
+
+  scenario-01:down:
+    desc: Destroy scenario-01-embeddings
+    cmds:
+      - terraform -chdir=scenario-01-embeddings destroy -auto-approve
+
+  # ─── Scenario 02 — Knowledge Bases ────────────────────────────────────────
+
+  scenario-02:plan:
+    desc: Preview scenario-02-knowledge-bases changes (deploys scenario-01 if absent)
+    deps: [_ensure-01]
+    cmds:
+      - terraform -chdir=scenario-02-knowledge-bases init -input=false
+      - terraform -chdir=scenario-02-knowledge-bases plan
+
+  scenario-02:up:
+    desc: Deploy scenario-02-knowledge-bases (deploys scenario-01 if absent)
+    deps: [_ensure-01]
+    cmds:
+      - terraform -chdir=scenario-02-knowledge-bases init -input=false
+      - terraform -chdir=scenario-02-knowledge-bases apply -auto-approve
+
+  scenario-02:down:
+    desc: Destroy scenario-02-knowledge-bases
+    cmds:
+      - terraform -chdir=scenario-02-knowledge-bases destroy -auto-approve
+
+  # ─── Scenario 03 — Advanced Retrieval ─────────────────────────────────────
+
+  scenario-03:plan:
+    desc: Preview scenario-03-advanced-retrieval changes (deploys scenario-01 if absent)
+    deps: [_ensure-01]
+    cmds:
+      - terraform -chdir=scenario-03-advanced-retrieval init -input=false
+      - terraform -chdir=scenario-03-advanced-retrieval plan
+
+  scenario-03:up:
+    desc: Deploy scenario-03-advanced-retrieval (deploys scenario-01 if absent)
+    deps: [_ensure-01]
+    cmds:
+      - terraform -chdir=scenario-03-advanced-retrieval init -input=false
+      - terraform -chdir=scenario-03-advanced-retrieval apply -auto-approve
+
+  scenario-03:down:
+    desc: Destroy scenario-03-advanced-retrieval
+    cmds:
+      - terraform -chdir=scenario-03-advanced-retrieval destroy -auto-approve
+
+  # ─── Scenario 04 — Prompt Management ─────────────────────────────────────
+
+  scenario-04:plan:
+    desc: Preview scenario-04-prompt-management changes
+    cmds:
+      - terraform -chdir=scenario-04-prompt-management init -input=false
+      - terraform -chdir=scenario-04-prompt-management plan
+
+  scenario-04:up:
+    desc: Deploy scenario-04-prompt-management
+    cmds:
+      - terraform -chdir=scenario-04-prompt-management init -input=false
+      - terraform -chdir=scenario-04-prompt-management apply -auto-approve
+
+  scenario-04:down:
+    desc: Destroy scenario-04-prompt-management
+    cmds:
+      - terraform -chdir=scenario-04-prompt-management destroy -auto-approve
+
+  # ─── Scenario 05 — Guardrails ─────────────────────────────────────────────
+
+  scenario-05:plan:
+    desc: Preview scenario-05-guardrails changes
+    cmds:
+      - terraform -chdir=scenario-05-guardrails init -input=false
+      - terraform -chdir=scenario-05-guardrails plan
+
+  scenario-05:up:
+    desc: Deploy scenario-05-guardrails
+    cmds:
+      - terraform -chdir=scenario-05-guardrails init -input=false
+      - terraform -chdir=scenario-05-guardrails apply -auto-approve
+
+  scenario-05:down:
+    desc: Destroy scenario-05-guardrails
+    cmds:
+      - terraform -chdir=scenario-05-guardrails destroy -auto-approve
+
+  # ─── Scenario 06 — Governance ─────────────────────────────────────────────
+
+  scenario-06:plan:
+    desc: Preview scenario-06-governance changes
+    cmds:
+      - terraform -chdir=scenario-06-governance init -input=false
+      - terraform -chdir=scenario-06-governance plan
+
+  scenario-06:up:
+    desc: Deploy scenario-06-governance
+    cmds:
+      - terraform -chdir=scenario-06-governance init -input=false
+      - terraform -chdir=scenario-06-governance apply -auto-approve
+
+  scenario-06:down:
+    desc: Destroy scenario-06-governance
+    cmds:
+      - terraform -chdir=scenario-06-governance destroy -auto-approve
+
+  # ─── Scenario 07 — Cost Optimization ─────────────────────────────────────
+
+  scenario-07:plan:
+    desc: Preview scenario-07-cost-optimization changes
+    cmds:
+      - terraform -chdir=scenario-07-cost-optimization init -input=false
+      - terraform -chdir=scenario-07-cost-optimization plan
+
+  scenario-07:up:
+    desc: Deploy scenario-07-cost-optimization
+    cmds:
+      - terraform -chdir=scenario-07-cost-optimization init -input=false
+      - terraform -chdir=scenario-07-cost-optimization apply -auto-approve
+
+  scenario-07:down:
+    desc: Destroy scenario-07-cost-optimization
+    cmds:
+      - terraform -chdir=scenario-07-cost-optimization destroy -auto-approve
+
+  # ─── Scenario 08 — Model Evaluation ──────────────────────────────────────
+
+  scenario-08:plan:
+    desc: Preview scenario-08-model-evaluation changes
+    cmds:
+      - terraform -chdir=scenario-08-model-evaluation init -input=false
+      - terraform -chdir=scenario-08-model-evaluation plan
+
+  scenario-08:up:
+    desc: Deploy scenario-08-model-evaluation
+    cmds:
+      - terraform -chdir=scenario-08-model-evaluation init -input=false
+      - terraform -chdir=scenario-08-model-evaluation apply -auto-approve
+
+  scenario-08:down:
+    desc: Destroy scenario-08-model-evaluation
+    cmds:
+      - terraform -chdir=scenario-08-model-evaluation destroy -auto-approve
+
+  # ─── Scenario 09 — Troubleshooting ────────────────────────────────────────
+
+  scenario-09:plan:
+    desc: Preview scenario-09-troubleshooting changes (deploys scenario-01 if absent)
+    deps: [_ensure-01]
+    cmds:
+      - terraform -chdir=scenario-09-troubleshooting init -input=false
+      - terraform -chdir=scenario-09-troubleshooting plan
+
+  scenario-09:up:
+    desc: Deploy scenario-09-troubleshooting (deploys scenario-01 if absent)
+    deps: [_ensure-01]
+    cmds:
+      - terraform -chdir=scenario-09-troubleshooting init -input=false
+      - terraform -chdir=scenario-09-troubleshooting apply -auto-approve
+
+  scenario-09:down:
+    desc: Destroy scenario-09-troubleshooting
+    cmds:
+      - terraform -chdir=scenario-09-troubleshooting destroy -auto-approve
+
+  # ─── Scenario 10 — CI/CD ─────────────────────────────────────────────────
+
+  scenario-10:plan:
+    desc: Preview scenario-10-cicd changes
+    cmds:
+      - terraform -chdir=scenario-10-cicd init -input=false
+      - terraform -chdir=scenario-10-cicd plan
+
+  scenario-10:up:
+    desc: Deploy scenario-10-cicd
+    cmds:
+      - terraform -chdir=scenario-10-cicd init -input=false
+      - terraform -chdir=scenario-10-cicd apply -auto-approve
+
+  scenario-10:down:
+    desc: Destroy scenario-10-cicd
+    cmds:
+      - terraform -chdir=scenario-10-cicd destroy -auto-approve
