@@ -1,23 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-
-  default_tags {
-    tags = {
-      Project  = var.project
-      Scenario = "03-advanced-retrieval"
-    }
-  }
-}
-
 # Prerequisite: scenario-01-embeddings must be deployed first.
 
 # TODO: data "aws_bedrockagent_knowledge_base" — reference KB from scenario-02 by ID

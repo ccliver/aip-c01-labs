@@ -1,11 +1,46 @@
 version: '3'
 
+env:
+  AWS_PROFILE: lab
+
 tasks:
 
   default:
     silent: true
     cmds:
       - task -l
+
+  # ─── Docs ──────────────────────────────────────────────────────────────────
+
+  docs:download:
+    desc: Download AWS service documentation PDFs to data/aws-docs/
+    cmds:
+      - uv run scripts/download_aws_docs.py
+
+  docs:upload:
+    desc: Upload PDFs to the scenario-01 corpus bucket under docs/
+    cmds:
+      - |
+        BUCKET=$(terraform -chdir=scenario-01-embeddings output -raw corpus_bucket_name)
+        aws s3 sync data/aws-docs/ "s3://$BUCKET/pdfs/" --exclude "*" --include "*.pdf"
+
+  # ─── OpenSearch ───────────────────────────────────────────────────────────
+
+  opensearch:query:
+    desc: "Query OpenSearch index from scenario-01 (args: [size=1] [source_key])"
+    cmds:
+      - |
+        export OS_ENDPOINT=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_collection_endpoint)
+        export OS_INDEX=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
+        uv run scripts/query_opensearch.py {{.CLI_ARGS}}
+
+  opensearch:knn:
+    desc: "KNN search against OpenSearch index from scenario-01 (args: <question>)"
+    cmds:
+      - |
+        export OS_ENDPOINT=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_collection_endpoint)
+        export OS_INDEX=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
+        uv run scripts/knn_search.py {{.CLI_ARGS}}
 
   # ─── Shared modules ────────────────────────────────────────────────────────
   # Modules are consumed by scenarios via local module references and are not
@@ -42,6 +77,7 @@ tasks:
   scenario-01:up:
     desc: Deploy scenario-01-embeddings
     cmds:
+      - docker pull --platform linux/arm64 ghcr.io/astral-sh/uv:python3.13-bookworm-slim
       - terraform -chdir=scenario-01-embeddings init -input=false
       - terraform -chdir=scenario-01-embeddings apply -auto-approve
 

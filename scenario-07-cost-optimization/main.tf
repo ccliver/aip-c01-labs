@@ -1,23 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-
-  default_tags {
-    tags = {
-      Project  = var.project
-      Scenario = "07-cost-optimization"
-    }
-  }
-}
-
 # TODO: aws_cloudwatch_dashboard — token usage, invocation count, and latency by model
 # TODO: aws_cloudwatch_metric_alarm — alert on daily token spend threshold
 # TODO: aws_budgets_budget — monthly Bedrock spend cap

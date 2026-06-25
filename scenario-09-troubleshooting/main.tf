@@ -1,23 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-
-  default_tags {
-    tags = {
-      Project  = var.project
-      Scenario = "09-troubleshooting"
-    }
-  }
-}
-
 # Prerequisite: scenario-01-embeddings must be deployed first.
 
 # TODO: module "probe_fn" — call modules/lambda_base; deliberately triggers common error conditions

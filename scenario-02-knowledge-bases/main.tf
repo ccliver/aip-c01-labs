@@ -1,23 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-
-  default_tags {
-    tags = {
-      Project  = var.project
-      Scenario = "02-knowledge-bases"
-    }
-  }
-}
-
 # Prerequisite: scenario-01-embeddings must be deployed first.
 
 # TODO: module "corpus_bucket" — call modules/s3 for the RAG document corpus
