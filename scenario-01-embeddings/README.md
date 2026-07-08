@@ -54,7 +54,7 @@ even if they use completely different words.
 **Titan Embeddings v2** supports 256, 512, and 1024 dimensions. Use 1024 for best semantic
 accuracy. The model ID is `amazon.titan-embed-text-v2:0`.
 
-At Healthfirst, SBERT running on a SageMaker endpoint is used instead of Titan. SBERT
+SBERT running on a SageMaker endpoint is another option for embeddings. SBERT
 produces better semantic similarity for domain-specific text and allows fine-tuning on
 healthcare data. Titan is fully managed but locked to Amazon's model weights.
 
@@ -82,7 +82,7 @@ chunking is splitting the relevant section across chunk boundaries.
 Large documents can produce thousands of chunks. Calling Titan sequentially in a single
 Lambda would hit timeout limits. The solution is fan-out: the ingestion Lambda writes one
 SQS message per chunk, and a separate embedding Lambda consumes the queue with high
-concurrency. This mirrors the Healthfirst pipeline architecture.
+concurrency.
 
 ## What the Exam Expects You to Know
 
