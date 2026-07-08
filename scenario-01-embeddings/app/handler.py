@@ -52,26 +52,16 @@ def store_chunks(bucket: str, source_key: str, chunks: list[str]) -> str:
 
 def send_to_sqs(source_key: str, chunks: list[str]) -> int:
     batches = [chunks[i:i + SQS_BATCH_SIZE] for i in range(0, len(chunks), SQS_BATCH_SIZE)]
-    messages_sent = 0
-    # send_message_batch accepts up to 10 entries per API call
-    for api_offset in range(0, len(batches), 10):
-        api_batch = batches[api_offset:api_offset + 10]
-        entries = [
-            {
-                "Id": str(api_offset + j),
-                "MessageBody": json.dumps({
-                    "source_key": source_key,
-                    "chunk_offset": (api_offset + j) * SQS_BATCH_SIZE,
-                    "chunks": batch,
-                }),
-            }
-            for j, batch in enumerate(api_batch)
-        ]
-        response = sqs.send_message_batch(QueueUrl=QUEUE_URL, Entries=entries)
-        if response.get("Failed"):
-            raise RuntimeError(f"SQS send_message_batch had failures: {response['Failed']}")
-        messages_sent += len(entries)
-    return messages_sent
+    for i, batch in enumerate(batches):
+        sqs.send_message(
+            QueueUrl=QUEUE_URL,
+            MessageBody=json.dumps({
+                "source_key": source_key,
+                "chunk_offset": i * SQS_BATCH_SIZE,
+                "chunks": batch,
+            }),
+        )
+    return len(batches)
 
 
 def process_record(bucket: str, key: str) -> dict:
