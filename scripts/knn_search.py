@@ -22,7 +22,7 @@ if len(sys.argv) < 2:
 
 question = " ".join(sys.argv[1:])
 
-session = boto3.Session(profile_name="lab")
+session = boto3.Session()
 creds = session.get_credentials().get_frozen_credentials()
 auth = AWS4Auth(creds.access_key, creds.secret_key, REGION, "aoss", session_token=creds.token)
 bedrock = session.client("bedrock-runtime", region_name=REGION)

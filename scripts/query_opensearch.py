@@ -16,7 +16,7 @@ REGION = os.environ.get("AWS_REGION", "us-east-1")
 SIZE = int(sys.argv[1]) if len(sys.argv) > 1 else 1
 source_filter = sys.argv[2] if len(sys.argv) > 2 else None
 
-session = boto3.Session(profile_name="lab")
+session = boto3.Session()
 creds = session.get_credentials().get_frozen_credentials()
 auth = AWS4Auth(creds.access_key, creds.secret_key, REGION, "aoss", session_token=creds.token)
 
