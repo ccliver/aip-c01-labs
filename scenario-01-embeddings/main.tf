@@ -1,8 +1,6 @@
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
-# ── S3 ───────────────────────────────────────────────────────────────────────
-
 resource "aws_s3_bucket" "corpus" {
   bucket           = "${var.project}-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.region}-an"
   bucket_namespace = "account-regional"
@@ -22,8 +20,6 @@ resource "aws_s3_bucket_notification" "pdf_trigger" {
   depends_on = [aws_lambda_permission.allow_s3]
 }
 
-# ── SQS ──────────────────────────────────────────────────────────────────────
-
 resource "aws_sqs_queue" "chunks_dlq" {
   name = "${var.project}-chunks-dlq"
 }
@@ -37,7 +33,15 @@ resource "aws_sqs_queue" "chunks" {
   })
 }
 
-# ── PDF handler Lambda ────────────────────────────────────────────────────────
+resource "aws_cloudwatch_log_group" "pdf_handler" {
+  name              = "/aws/lambda/${var.project}-pdf-handler"
+  retention_in_days = 14
+}
+
+resource "aws_cloudwatch_log_group" "chunk_embedder" {
+  name              = "/aws/lambda/${var.project}-chunk-embedder"
+  retention_in_days = 14
+}
 
 module "pdf_handler" {
   source  = "terraform-aws-modules/lambda/aws"
@@ -69,6 +73,8 @@ module "pdf_handler" {
     QUEUE_URL               = aws_sqs_queue.chunks.url
   }
 
+  use_existing_cloudwatch_log_group = true
+
   create_role              = true
   attach_policy_statements = true
   policy_statements = {
@@ -93,6 +99,8 @@ module "pdf_handler" {
       resources = [aws_sqs_queue.chunks.arn]
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.pdf_handler]
 }
 
 resource "aws_lambda_permission" "allow_s3" {
@@ -141,6 +149,8 @@ module "chunk_embedder" {
     OS_INDEX                = "${var.project}-chunks"
   }
 
+  use_existing_cloudwatch_log_group = true
+
   create_role              = true
   attach_policy_statements = true
   policy_statements = {
@@ -160,6 +170,8 @@ module "chunk_embedder" {
       resources = [aws_opensearchserverless_collection.vectors.arn]
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.chunk_embedder]
 }
 
 resource "aws_opensearchserverless_security_policy" "encryption" {

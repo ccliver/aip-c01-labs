@@ -27,3 +27,8 @@ output "chunks_dlq_url" {
   description = "SQS dead-letter queue URL for failed embedding batches"
   value       = aws_sqs_queue.chunks_dlq.url
 }
+
+output "opensearch_collection_arn" {
+  description = "ARN of the OpenSearch Serverless collection"
+  value       = aws_opensearchserverless_collection.vectors.arn
+}
