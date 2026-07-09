@@ -102,6 +102,21 @@ tasks:
       - terraform -chdir=scenario-02-knowledge-bases init -input=false
       - terraform -chdir=scenario-02-knowledge-bases apply -auto-approve
 
+  scenario-02:sync:
+    desc: Start a Bedrock Knowledge Base ingestion job for scenario-02
+    cmds:
+      - |
+        KB_ID=$(terraform -chdir=scenario-02-knowledge-bases output -raw knowledge_base_id)
+        DS_ID=$(terraform -chdir=scenario-02-knowledge-bases output -raw data_source_id)
+        aws bedrock-agent start-ingestion-job --knowledge-base-id "$KB_ID" --data-source-id "$DS_ID"
+
+  scenario-02:retrieve:
+    desc: "Retrieve from Bedrock Knowledge Base in scenario-02 (args: <question>)"
+    cmds:
+      - |
+        export KB_ID=$(terraform -chdir=scenario-02-knowledge-bases output -raw knowledge_base_id)
+        uv run scripts/kb_retrieve.py {{.CLI_ARGS}}
+
   scenario-02:down:
     desc: Destroy scenario-02-knowledge-bases
     cmds:

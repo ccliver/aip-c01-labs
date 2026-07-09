@@ -21,3 +21,15 @@ variable "chunking_strategy" {
   type        = string
   default     = "FIXED_SIZE"
 }
+
+variable "max_tokens" {
+  description = "Max tokens per chunk (FIXED_SIZE chunking only)"
+  type        = number
+  default     = 300
+}
+
+variable "overlap_percentage" {
+  description = "Overlap percentage between chunks (FIXED_SIZE chunking only)"
+  type        = number
+  default     = 10
+}
