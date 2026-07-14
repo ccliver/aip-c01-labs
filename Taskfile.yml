@@ -138,6 +138,27 @@ tasks:
       - terraform -chdir=scenario-03-advanced-retrieval init -input=false
       - terraform -chdir=scenario-03-advanced-retrieval apply -auto-approve
 
+  scenario-03:hybrid:
+    desc: "Hybrid (BM25 + kNN) search against scenario-01 index (args: <question>)"
+    cmds:
+      - |
+        export OS_ENDPOINT=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_collection_endpoint)
+        export OS_INDEX=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
+        uv run scripts/hybrid_search.py {{.CLI_ARGS}}
+
+  scenario-03:compare:
+    desc: "Compare kNN vs hybrid search for the same query (args: <question>)"
+    cmds:
+      - |
+        export OS_ENDPOINT=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_collection_endpoint)
+        export OS_INDEX=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
+        echo ""
+        echo "════ kNN only ════════════════════════════════════════════════"
+        uv run scripts/knn_search.py {{.CLI_ARGS}}
+        echo ""
+        echo "════ Hybrid (BM25=${BM25_WEIGHT:-0.3} / kNN=${KNN_WEIGHT:-0.7}) ══════════════"
+        uv run scripts/hybrid_search.py {{.CLI_ARGS}}
+
   scenario-03:down:
     desc: Destroy scenario-03-advanced-retrieval
     cmds:
