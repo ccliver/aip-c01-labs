@@ -1,1 +1,4 @@
-# TODO: output "query_router_function_arn" — Lambda that applies retrieval strategies
+output "state_machine_arn" {
+  description = "ARN of the RAG pipeline Step Functions state machine"
+  value       = aws_sfn_state_machine.pipeline.arn
+}

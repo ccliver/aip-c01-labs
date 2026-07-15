@@ -135,6 +135,7 @@ tasks:
     desc: Deploy scenario-03-advanced-retrieval (deploys scenario-01 if absent)
     deps: [_ensure-01]
     cmds:
+      - docker pull --platform linux/arm64 public.ecr.aws/sam/build-python3.13
       - terraform -chdir=scenario-03-advanced-retrieval init -input=false
       - terraform -chdir=scenario-03-advanced-retrieval apply -auto-approve
 
@@ -158,6 +159,17 @@ tasks:
         echo ""
         echo "════ Hybrid (BM25=${BM25_WEIGHT:-0.3} / kNN=${KNN_WEIGHT:-0.7}) ══════════════"
         uv run scripts/hybrid_search.py {{.CLI_ARGS}}
+
+  scenario-03:query:
+    desc: "Run the RAG pipeline state machine and print results (args: <question>)"
+    cmds:
+      - |
+        SFN_ARN=$(terraform -chdir=scenario-03-advanced-retrieval output -raw state_machine_arn)
+        INPUT=$(jq -n --arg q "{{.CLI_ARGS}}" '{"question": $q}')
+        aws stepfunctions start-sync-execution \
+          --state-machine-arn "$SFN_ARN" \
+          --input "$INPUT" \
+          --output json | jq 'if .status == "SUCCEEDED" then .output | fromjson else {status: .status, error: .error, cause: .cause} end'
 
   scenario-03:down:
     desc: Destroy scenario-03-advanced-retrieval
