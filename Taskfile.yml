@@ -42,6 +42,35 @@ tasks:
         export OS_INDEX=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
         uv run scripts/knn_search.py {{.CLI_ARGS}}
 
+  # ─── Teardown ──────────────────────────────────────────────────────────────
+
+  teardown:all:
+    desc: Destroy every deployed scenario in dependency-safe order
+    cmds:
+      - |
+        has_resources() {
+          [ -f "$1/terraform.tfstate" ] && \
+            jq -e '.resources | length > 0' "$1/terraform.tfstate" > /dev/null 2>&1
+        }
+        destroy_if_deployed() {
+          if has_resources "$1"; then
+            echo "→ destroying $1"
+            terraform -chdir="$1" destroy -auto-approve
+          else
+            echo "  skipping $1 (not deployed)"
+          fi
+        }
+        # Dependents of scenario-01 must go first
+        destroy_if_deployed scenario-03-advanced-retrieval
+        destroy_if_deployed scenario-02-knowledge-bases
+        destroy_if_deployed scenario-09-troubleshooting
+        # scenario-01 after its dependents are gone
+        destroy_if_deployed scenario-01-embeddings
+        # Independent scenarios — order doesn't matter
+        for dir in scenario-04-prompt-management scenario-05-guardrails scenario-06-governance scenario-07-cost-optimization scenario-08-model-evaluation scenario-10-cicd; do
+          destroy_if_deployed "$dir"
+        done
+
   # ─── Internal sentinel ─────────────────────────────────────────────────────
   # Scenarios 02, 03, and 09 call this task as a dependency. It runs
   # scenario-01:up only when the state file does not yet exist.
