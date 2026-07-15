@@ -42,19 +42,6 @@ tasks:
         export OS_INDEX=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
         uv run scripts/knn_search.py {{.CLI_ARGS}}
 
-  # ─── Shared modules ────────────────────────────────────────────────────────
-  # Modules are consumed by scenarios via local module references and are not
-  # deployed independently. This task validates that each module is well-formed.
-
-  shared:up:
-    desc: Validate all shared Terraform modules
-    cmds:
-      - for m in vpc iam_roles s3 lambda_base; do
-          printf "\n--- modules/$$m ---\n";
-          terraform -chdir=modules/$$m init -backend=false -input=false -no-color 2>&1 | tail -1;
-          terraform -chdir=modules/$$m validate;
-        done
-
   # ─── Internal sentinel ─────────────────────────────────────────────────────
   # Scenarios 02, 03, and 09 call this task as a dependency. It runs
   # scenario-01:up only when the state file does not yet exist.
