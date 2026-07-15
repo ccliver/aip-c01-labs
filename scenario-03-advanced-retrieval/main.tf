@@ -60,7 +60,7 @@ resource "aws_opensearchserverless_access_policy" "s03_data" {
       {
         Resource     = ["collection/${var.project}"]
         ResourceType = "collection"
-        Permission   = ["aoss:DescribeCollectionItems"]
+        Permission   = ["aoss:CreateCollectionItems", "aoss:UpdateCollectionItems", "aoss:DescribeCollectionItems"]
       },
       {
         Resource     = ["index/${var.project}/*"]
@@ -72,13 +72,13 @@ resource "aws_opensearchserverless_access_policy" "s03_data" {
   }])
 }
 
-resource "aws_cloudwatch_log_group" "sfn" {
-  name              = "/aws/states/${var.project}-rag-pipeline"
+resource "aws_cloudwatch_log_group" "hybrid_search" {
+  name              = "/aws/lambda/${var.project}-s03-hybrid-search"
   retention_in_days = 14
 }
 
-resource "aws_cloudwatch_log_group" "hybrid_search" {
-  name              = "/aws/lambda/${var.project}-s03-hybrid-search"
+resource "aws_cloudwatch_log_group" "sfn" {
+  name              = "/aws/states/${var.project}-rag-pipeline"
   retention_in_days = 14
 }
 
