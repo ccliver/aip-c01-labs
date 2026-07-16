@@ -119,7 +119,7 @@ def expand_query(q: str) -> list[str]:
                     f"Question: {q}"
                 )}],
             },
-            {"role": "assistant", "content": [{"text": "["}]},
+            {"role": "assistant", "content": [{"text": "["}]}, # Prefill trick forces JSON output
         ],
     )
     raw = "[" + resp["output"]["message"]["content"][0]["text"]
