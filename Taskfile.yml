@@ -156,11 +156,12 @@ tasks:
       - terraform -chdir=scenario-03-advanced-retrieval apply -auto-approve
 
   scenario-03:hybrid:
-    desc: "Hybrid (BM25 + kNN) search against scenario-01 index (args: <question>)"
+    desc: "Hybrid (BM25 + kNN) search against scenario-01 index (args: [--rerank] [--query-expansion] <question>)"
     cmds:
       - |
         export OS_ENDPOINT=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_collection_endpoint)
         export OS_INDEX=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
+        export DDB_TABLE_NAME=$(terraform -chdir=scenario-04-prompt-management output -raw prompt_registry_table_name 2>/dev/null || true)
         uv run scripts/hybrid_search.py {{.CLI_ARGS}}
 
   scenario-03:compare:
@@ -169,6 +170,7 @@ tasks:
       - |
         export OS_ENDPOINT=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_collection_endpoint)
         export OS_INDEX=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
+        export DDB_TABLE_NAME=$(terraform -chdir=scenario-04-prompt-management output -raw prompt_registry_table_name 2>/dev/null || true)
         echo ""
         echo "════ kNN only ════════════════════════════════════════════════"
         uv run scripts/knn_search.py {{.CLI_ARGS}}
