@@ -14,7 +14,8 @@ responsible AI requirements.
 | S3 bucket (logs) | Durable storage for CloudTrail and invocation log data |
 | IAM deny policy | Restricts `bedrock:InvokeModel` to an approved model allowlist |
 | AWS Config rule | Flags Bedrock resources that are missing mandatory cost-allocation tags |
-| Invocation logging config | Enables data-plane logging of all request/response payloads |
+
+> **Note:** Data-plane invocation logging (request/response payloads to CloudWatch Logs + S3) is configured in `scenario-04-prompt-management`, not here. `aws_bedrock_model_invocation_logging_configuration` is an account+region-wide singleton, so only one scenario can manage it — scenario-04 must stay deployed for it to be active.
 
 ## Key concepts
 
