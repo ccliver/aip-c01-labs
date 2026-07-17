@@ -11,7 +11,7 @@ variable "project" {
 }
 
 variable "foundation_model_id" {
-  description = "Bedrock model ID to associate with the prompt"
+  description = "Bedrock inference profile ID to associate with the prompt"
   type        = string
-  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
