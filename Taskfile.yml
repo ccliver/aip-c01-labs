@@ -127,7 +127,7 @@ tasks:
         aws bedrock-agent start-ingestion-job --knowledge-base-id "$KB_ID" --data-source-id "$DS_ID"
 
   scenario-02:retrieve:
-    desc: "Retrieve from Bedrock Knowledge Base in scenario-02 (args: <question>)"
+    desc: "Retrieve + generate an answer from Bedrock Knowledge Base in scenario-02, guarded if scenario-05 is deployed (args: <question>)"
     cmds:
       - |
         export KB_ID=$(terraform -chdir=scenario-02-knowledge-bases output -raw knowledge_base_id)
@@ -231,6 +231,13 @@ tasks:
     desc: Destroy scenario-05-guardrails
     cmds:
       - terraform -chdir=scenario-05-guardrails destroy -auto-approve
+
+  scenario-05:test:
+    desc: "Probe the scenario-05 guardrail with adversarial, benign, and grounding inputs (grounding case needs scenario-02 deployed)"
+    cmds:
+      - |
+        export KB_ID=$(terraform -chdir=scenario-02-knowledge-bases output -raw knowledge_base_id 2>/dev/null || true)
+        uv run scripts/test_guardrails.py
 
   # ─── Scenario 06 — Governance ─────────────────────────────────────────────
 
