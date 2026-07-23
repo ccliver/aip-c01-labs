@@ -139,7 +139,7 @@ module "chunk_embedder" {
       event_source_arn = aws_sqs_queue.chunks.arn
       batch_size       = 1
       scaling_config = {
-        maximum_concurrency = 2
+        maximum_concurrency = 8
       }
     }
   }

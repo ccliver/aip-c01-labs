@@ -18,11 +18,16 @@ tasks:
       - uv run scripts/download_aws_docs.py
 
   docs:upload:
-    desc: Upload PDFs to the scenario-01 corpus bucket under docs/
+    desc: Upload PDFs to the scenario-01 corpus bucket under docs/ (staggered to avoid a thundering-herd ingestion burst)
     cmds:
       - |
         BUCKET=$(terraform -chdir=scenario-01-embeddings output -raw corpus_bucket_name)
-        aws s3 sync data/aws-docs/ "s3://$BUCKET/pdfs/" --exclude "*" --include "*.pdf"
+        for pdf in data/aws-docs/*.pdf; do
+          name=$(basename "$pdf")
+          echo "→ uploading $name"
+          aws s3 cp "$pdf" "s3://$BUCKET/pdfs/$name"
+          sleep 15
+        done
 
   # ─── OpenSearch ───────────────────────────────────────────────────────────
 
@@ -64,8 +69,13 @@ tasks:
         destroy_if_deployed scenario-03-advanced-retrieval
         destroy_if_deployed scenario-02-knowledge-bases
         destroy_if_deployed scenario-09-troubleshooting
-        # scenario-01 after its dependents are gone
-        destroy_if_deployed scenario-01-embeddings
+        # scenario-01 after its dependents are gone (index submodule must go before the collection)
+        if has_resources scenario-01-embeddings; then
+          echo "→ destroying scenario-01-embeddings (and its index)"
+          task scenario-01:down
+        else
+          echo "  skipping scenario-01-embeddings (not deployed)"
+        fi
         # Independent scenarios — order doesn't matter
         for dir in scenario-04-prompt-management scenario-05-guardrails scenario-06-governance scenario-07-cost-optimization scenario-08-model-evaluation scenario-10-cicd; do
           destroy_if_deployed "$dir"
@@ -91,15 +101,26 @@ tasks:
       - terraform -chdir=scenario-01-embeddings plan
 
   scenario-01:up:
-    desc: Deploy scenario-01-embeddings
+    desc: Deploy scenario-01-embeddings (collection, queues, lambdas, then the OpenSearch index)
     cmds:
       - docker pull --platform linux/arm64 ghcr.io/astral-sh/uv:python3.13-bookworm-slim
       - terraform -chdir=scenario-01-embeddings init -input=false
       - terraform -chdir=scenario-01-embeddings apply -auto-approve
+      - terraform -chdir=scenario-01-embeddings/index init -input=false
+      - |
+        terraform -chdir=scenario-01-embeddings/index apply -auto-approve \
+          -var opensearch_endpoint=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_collection_endpoint) \
+          -var opensearch_index_name=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
 
   scenario-01:down:
-    desc: Destroy scenario-01-embeddings
+    desc: Destroy scenario-01-embeddings (the OpenSearch index first, then the collection it lives in)
     cmds:
+      - |
+        if [ -f scenario-01-embeddings/index/terraform.tfstate ]; then
+          terraform -chdir=scenario-01-embeddings/index destroy -auto-approve \
+            -var opensearch_endpoint=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_collection_endpoint) \
+            -var opensearch_index_name=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
+        fi
       - terraform -chdir=scenario-01-embeddings destroy -auto-approve
 
   # ─── Scenario 02 — Knowledge Bases ────────────────────────────────────────

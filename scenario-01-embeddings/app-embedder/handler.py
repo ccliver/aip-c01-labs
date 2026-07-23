@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime, timezone
 import boto3
 from aws_lambda_powertools import Logger
@@ -19,23 +20,7 @@ EMBEDDING_MODEL_ID = os.environ["EMBEDDING_MODEL_ID"]
 OS_ENDPOINT = os.environ["OS_ENDPOINT"]
 OS_INDEX = os.environ["OS_INDEX"]
 EMBED_DIMENSIONS = 1024
-
-INDEX_MAPPING = {
-    "settings": {"index": {"knn": True}},
-    "mappings": {
-        "properties": {
-            "chunk_id": {"type": "integer"},
-            "source_key": {"type": "keyword"},
-            "text": {"type": "text"},
-            "embedding": {
-                "type": "knn_vector",
-                "dimension": EMBED_DIMENSIONS,
-            },
-            "domain": {"type": "keyword"},
-            "timestamp": {"type": "date"},
-        }
-    },
-}
+EMBED_CALL_DELAY_SECONDS = float(os.environ.get("EMBED_CALL_DELAY_SECONDS", "0"))
 
 
 def get_os_client() -> OpenSearch:
@@ -49,13 +34,10 @@ def get_os_client() -> OpenSearch:
         use_ssl=True,
         verify_certs=True,
         connection_class=RequestsHttpConnection,
+        timeout=60,
+        max_retries=3,
+        retry_on_timeout=True,
     )
-
-
-def ensure_index(os_client: OpenSearch) -> None:
-    if not os_client.indices.exists(index=OS_INDEX):
-        os_client.indices.create(index=OS_INDEX, body=INDEX_MAPPING)
-        logger.info("Created index", extra={"index": OS_INDEX})
 
 
 def embed_text(text: str) -> list[float]:
@@ -63,6 +45,7 @@ def embed_text(text: str) -> list[float]:
         modelId=EMBEDDING_MODEL_ID,
         body=json.dumps({"inputText": text, "dimensions": EMBED_DIMENSIONS, "normalize": True}),
     )
+    time.sleep(EMBED_CALL_DELAY_SECONDS)
     return json.loads(response["body"].read())["embedding"]
 
 
@@ -95,7 +78,6 @@ def process_message(body: dict) -> dict:
     embeddings = [embed_text(chunk) for chunk in chunks]
 
     os_client = get_os_client()
-    ensure_index(os_client)
     index_documents(os_client, source_key, chunk_offset, chunks, embeddings)
 
     logger.info("Indexed batch", extra={"source_key": source_key, "chunk_offset": chunk_offset, "indexed": len(chunks)})
