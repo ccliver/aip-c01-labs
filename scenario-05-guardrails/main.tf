@@ -14,6 +14,17 @@ resource "aws_bedrock_guardrail" "this" {
         output_enabled  = true
       }
     }
+
+    # Jailbreaks/prompt injection only ever show up in what the user sends,
+    # so this filter has no output_strength/output_enabled — unlike the
+    # categories above, it isn't evaluated against model responses.
+    filters_config {
+      type            = "PROMPT_ATTACK"
+      input_strength  = var.content_filter_strength
+      output_strength = "NONE"
+      input_enabled   = true
+      output_enabled  = false
+    }
   }
 
   topic_policy_config {

@@ -112,8 +112,10 @@ def expand_query(bedrock, prompt_arn: str, q: str, guardrail_config: Optional[di
     if guardrail_config:
         kwargs["guardrailConfig"] = guardrail_config
     resp = bedrock.converse(**kwargs)
-    raw = "[" + resp["output"]["message"]["content"][0]["text"]  # prefill trick forces JSON output
-    return [q] + json.loads(raw)
+    text = resp["output"]["message"]["content"][0]["text"]
+    if resp["stopReason"] == "guardrail_intervened":
+        raise RuntimeError(f"Guardrail blocked query expansion input: {text}")
+    return [q] + json.loads("[" + text)  # prefill trick forces JSON output
 
 
 def generate_answer(bedrock, model_id: str, question: str, chunks: list, guardrail_config: Optional[dict] = None) -> tuple[str, bool]:
