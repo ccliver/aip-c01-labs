@@ -145,11 +145,13 @@ def generate_answer(bedrock, model_id: str, question: str, chunks: list, guardra
     return text, intervened
 
 
-def print_answer(question: str, answer: str, intervened: bool) -> None:
+def print_answer(question: str, validation: "comprehend_guard.ResponseValidation", intervened: bool) -> None:
     print(f"\nQuery: {question}\n{'─' * 60}")
     if intervened:
         print("[guardrail intervened — response was blocked or altered]")
-    print(f"\n{answer}\n{'─' * 60}")
+    if validation.low_confidence:
+        print(f"[low-confidence: {'; '.join(validation.reasons)}]")
+    print(f"\n{validation.response}\n{'─' * 60}")
 
 
 def dedup_by_chunk_id(all_hits: list) -> list:
@@ -218,6 +220,7 @@ def main(
     dynamodb = session.client("dynamodb", region_name=region)
     ssm = session.client("ssm", region_name=region)
     comprehend = session.client("comprehend", region_name=region)
+    logs = session.client("logs", region_name=region)
 
     check = comprehend_guard.check_input(comprehend, question_text)
     for warning in check.warnings:
@@ -253,7 +256,8 @@ def main(
 
         if generate:
             answer, intervened = generate_answer(bedrock, generation_model_id, question_text, reranked, guardrail_config)
-            print_answer(question_text, answer, intervened)
+            validation = comprehend_guard.validate_response(logs, question_text, answer, [h["_source"]["text"] for h in reranked])
+            print_answer(question_text, validation, intervened)
 
     elif rerank:
         hits = hybrid_search(endpoint, index, auth, bedrock, embedding_model_id, question_text)
@@ -266,7 +270,8 @@ def main(
 
         if generate:
             answer, intervened = generate_answer(bedrock, generation_model_id, question_text, reranked, guardrail_config)
-            print_answer(question_text, answer, intervened)
+            validation = comprehend_guard.validate_response(logs, question_text, answer, [h["_source"]["text"] for h in reranked])
+            print_answer(question_text, validation, intervened)
 
     else:
         hits = hybrid_search(endpoint, index, auth, bedrock, embedding_model_id, question_text)

@@ -89,20 +89,21 @@ resource "aws_opensearchserverless_access_policy" "kb_data" {
 }
 
 # Bedrock does not auto-create the AOSS index; it must exist with Bedrock's expected field names.
-resource "null_resource" "kb_index" {
-  triggers = {
-    collection_endpoint = local.collection_endpoint
-    index_name          = local.kb_index_name
-  }
+resource "opensearch_index" "kb" {
+  name      = local.kb_index_name
+  index_knn = true
 
-  provisioner "local-exec" {
-    command = "uv run ${path.module}/../scripts/create_aoss_index.py"
-    environment = {
-      OS_ENDPOINT = local.collection_endpoint
-      OS_INDEX    = local.kb_index_name
-      AWS_REGION  = data.aws_region.current.name
+  mappings = jsonencode({
+    properties = {
+      "bedrock-knowledge-base-default-vector" = {
+        type      = "knn_vector"
+        dimension = 1024
+        method    = { name = "hnsw", engine = "faiss" }
+      }
+      "AMAZON_BEDROCK_TEXT_CHUNK" = { type = "text" }
+      "AMAZON_BEDROCK_METADATA"   = { type = "text" }
     }
-  }
+  })
 }
 
 resource "aws_bedrockagent_knowledge_base" "this" {
@@ -132,7 +133,7 @@ resource "aws_bedrockagent_knowledge_base" "this" {
   depends_on = [
     aws_iam_role_policy.kb,
     aws_opensearchserverless_access_policy.kb_data,
-    null_resource.kb_index,
+    opensearch_index.kb,
   ]
 }
 

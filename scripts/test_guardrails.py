@@ -74,11 +74,47 @@ COMPREHEND_TEST_CASES = [
     ),
 ]
 
+# Exercises comprehend_guard.validate_response() — the post-processing step
+# that runs after the FM answers but before the response reaches the user.
+# Each case isolates one flag condition; the chunk text is shared so only the
+# field under test (length / uncertainty language / term overlap) differs.
+TOP_CHUNK = (
+    "AWS Lambda function timeout can be configured up to a maximum of 900 "
+    "seconds (15 minutes) per invocation."
+)
+RESPONSE_VALIDATION_TEST_CASES = [
+    (
+        "Too short",
+        "900 seconds.",
+        True,
+    ),
+    (
+        "Uncertainty language",
+        "I'm not sure, but I believe the Lambda timeout maximum might be somewhere "
+        "around 900 seconds, though I cannot verify this precisely from the provided context.",
+        True,
+    ),
+    (
+        "No overlap with retrieved chunk (possible hallucination)",
+        "Amazon S3 Glacier Deep Archive is designed for long-term data retention with "
+        "retrieval requests typically taking several hours to complete, at very low "
+        "storage cost compared to standard storage classes.",
+        True,
+    ),
+    (
+        "Well-grounded control",
+        "The maximum timeout for an AWS Lambda function invocation is 900 seconds, "
+        "which is equivalent to 15 minutes, and this can be configured per function.",
+        False,
+    ),
+]
+
 session = boto3.Session()
 bedrock = session.client("bedrock-runtime", region_name=REGION)
 agent_rt = session.client("bedrock-agent-runtime", region_name=REGION)
 ssm = session.client("ssm", region_name=REGION)
 comprehend = session.client("comprehend", region_name=REGION)
+logs = session.client("logs", region_name=REGION)
 
 guardrail_id = ssm.get_parameter(Name=GUARDRAIL_ID_PARAM)["Parameter"]["Value"]
 guardrail_version = ssm.get_parameter(Name=GUARDRAIL_VERSION_PARAM)["Parameter"]["Value"]
@@ -214,6 +250,23 @@ for label, text in COMPREHEND_TEST_CASES:
     guardrail_resp = apply_guardrail(text, "INPUT")
     guardrail_verdict = verdict_for(guardrail_resp)
     print(f"guardrail:  verdict={guardrail_verdict}  (action={guardrail_resp['action']})")
+
+    print("─" * 60)
+
+print("\n=== Response validation (post-processing) ===")
+for label, response, expect_low_confidence in RESPONSE_VALIDATION_TEST_CASES:
+    print(f"\n-- {label} --")
+    print(f"response (pre-validation): {response}")
+
+    validation = comprehend_guard.validate_response(logs, "What is the maximum Lambda timeout?", response, [TOP_CHUNK])
+    disclaimer_appended = comprehend_guard.DISCLAIMER in validation.response
+    outcome = "PASSED" if validation.low_confidence == expect_low_confidence else "FAILED"
+    print(f"verdict: {outcome}  (low_confidence={validation.low_confidence}, expected={expect_low_confidence})")
+    if validation.reasons:
+        print(f"  reasons: {'; '.join(validation.reasons)}")
+    print(f"  disclaimer appended: {disclaimer_appended}")
+    if validation.low_confidence != disclaimer_appended:
+        print("  FAILED: disclaimer presence doesn't match low_confidence flag")
 
     print("─" * 60)
 

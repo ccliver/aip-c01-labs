@@ -5,5 +5,9 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    opensearch = {
+      source  = "opensearch-project/opensearch"
+      version = "~> 2.3"
+    }
   }
 }

@@ -57,11 +57,13 @@ def generate_answer(bedrock, model_id: str, question: str, chunks: list, guardra
     return text, intervened
 
 
-def print_results(question: str, chunks: list, answer: str, intervened: bool) -> None:
+def print_results(question: str, chunks: list, validation: "comprehend_guard.ResponseValidation", intervened: bool) -> None:
     print(f"\nQuery: {question}\n{'─' * 60}")
     if intervened:
         print("[guardrail intervened — response was blocked or altered]")
-    print(f"\n{answer}\n{'─' * 60}")
+    if validation.low_confidence:
+        print(f"[low-confidence: {'; '.join(validation.reasons)}]")
+    print(f"\n{validation.response}\n{'─' * 60}")
     for chunk in chunks:
         uri = chunk.get("location", {}).get("s3Location", {}).get("uri", "unknown")
         source = uri.split("/", 3)[-1] if uri.startswith("s3://") else uri
@@ -87,6 +89,7 @@ def main(
     bedrock = session.client("bedrock-runtime", region_name=region)
     ssm = session.client("ssm", region_name=region)
     comprehend = session.client("comprehend", region_name=region)
+    logs = session.client("logs", region_name=region)
 
     check = comprehend_guard.check_input(comprehend, question_text)
     for warning in check.warnings:
@@ -105,7 +108,8 @@ def main(
         typer.echo("No guardrail found in SSM (scenario-05 must be deployed) — proceeding without one", err=True)
 
     answer, intervened = generate_answer(bedrock, model_id, question_text, chunks, guardrail_config)
-    print_results(question_text, chunks, answer, intervened)
+    validation = comprehend_guard.validate_response(logs, question_text, answer, [c["content"]["text"] for c in chunks])
+    print_results(question_text, chunks, validation, intervened)
 
 
 if __name__ == "__main__":
