@@ -13,6 +13,8 @@ from typing import Optional
 
 import boto3
 
+import comprehend_guard
+
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 KB_ID = os.environ.get("KB_ID")
 GENERATION_MODEL_ID = os.environ.get("GENERATION_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
@@ -51,10 +53,32 @@ TEST_CASES = [
     ),
 ]
 
+# Exercises the Comprehend pre-processing guard (scripts/comprehend_guard.py)
+# alongside the same Bedrock Guardrail used above, for direct comparison —
+# notably PII here gets caught by Comprehend even though the guardrail's PII
+# policy misses it on source="INPUT" (see the "PII in input" case above).
+COMPREHEND_TEST_CASES = [
+    (
+        "Negative sentiment",
+        "This documentation is absolutely terrible — I hate how confusing and "
+        "poorly organized the Lambda docs are.",
+    ),
+    (
+        "PII in input",
+        "My name is John Smith, my email is john.smith@example.com, my phone is "
+        "555-123-4567, and my SSN is 123-45-6789. Please keep this on file.",
+    ),
+    (
+        "Control: AWS question",
+        "What is the difference between Amazon S3 Standard and S3 Glacier storage classes?",
+    ),
+]
+
 session = boto3.Session()
 bedrock = session.client("bedrock-runtime", region_name=REGION)
 agent_rt = session.client("bedrock-agent-runtime", region_name=REGION)
 ssm = session.client("ssm", region_name=REGION)
+comprehend = session.client("comprehend", region_name=REGION)
 
 guardrail_id = ssm.get_parameter(Name=GUARDRAIL_ID_PARAM)["Parameter"]["Value"]
 guardrail_version = ssm.get_parameter(Name=GUARDRAIL_VERSION_PARAM)["Parameter"]["Value"]
@@ -168,6 +192,28 @@ for label, text, source in TEST_CASES:
         print(f"output:  {resp['outputs'][0]['text']}")
     else:
         print("output:  (none)")
+
+    print("─" * 60)
+
+print("\n=== Comprehend pre-processing ===")
+for label, text in COMPREHEND_TEST_CASES:
+    print(f"\n-- {label} --")
+    print(f"input:   {text}")
+
+    check = comprehend_guard.check_input(comprehend, text)
+    print(
+        f"comprehend: sentiment={check.sentiment} ({check.sentiment_score:.3f})  "
+        f"language={check.language_code} ({check.language_score:.3f})  "
+        f"pii={check.pii_entity_types}  blocked={check.blocked}"
+    )
+    for warning in check.warnings:
+        print(f"  WARNING: {warning}")
+    if check.blocked:
+        print(f"  BLOCKED: PII detected in input ({', '.join(check.pii_entity_types)}) — request would not reach the FM")
+
+    guardrail_resp = apply_guardrail(text, "INPUT")
+    guardrail_verdict = verdict_for(guardrail_resp)
+    print(f"guardrail:  verdict={guardrail_verdict}  (action={guardrail_resp['action']})")
 
     print("─" * 60)
 

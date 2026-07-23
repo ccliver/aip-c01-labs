@@ -36,3 +36,19 @@ Known gotchas already confirmed against docs/live testing (don't re-derive these
   This isn't stated explicitly in AWS docs, but every PII example in the
   `ApplyGuardrail` guide uses `source: "OUTPUT"`, including ones that read like user
   input — treat that pattern as a hint, not a guarantee, and re-verify if it matters.
+  Comprehend's `detect_pii_entities` has no such quirk — it evaluates whatever text
+  you hand it regardless of role, which is what makes it a useful complement in front
+  of a guardrail rather than a redundant check (see `scripts/comprehend_guard.py`).
+- The `aws_bedrock_guardrail` Terraform resource's `content_policy_config.filters_config`
+  requires `output_strength` even when `output_enabled = false` — the provider schema
+  lists it as optional, but `terraform apply` fails with "Missing required argument"
+  if it's omitted. Set it to a valid enum value (e.g. `"NONE"`) rather than leaving it
+  out, for filters like `PROMPT_ATTACK` that only apply to input.
+- Amazon Titan Text Embeddings V2 on-demand quota is 6,000 requests/min and 300,000
+  tokens/min per Region, and neither is adjustable. Useful ceiling to check before
+  assuming a slow embedding pipeline is throttling-limited — do the RPM/TPM math
+  first; the actual bottleneck is often self-imposed concurrency limits or sleeps,
+  not the account quota.
+- Comprehend's PII detection (`detect_pii_entities`) only supports English and
+  Spanish `LanguageCode` values — don't wire in a dynamically detected language from
+  `detect_dominant_language` without checking it's one of those two first.

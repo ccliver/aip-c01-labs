@@ -9,6 +9,8 @@ import os
 import boto3
 import typer
 
+import comprehend_guard
+
 TOP_K = 5
 
 
@@ -84,6 +86,14 @@ def main(
     agent_rt = session.client("bedrock-agent-runtime", region_name=region)
     bedrock = session.client("bedrock-runtime", region_name=region)
     ssm = session.client("ssm", region_name=region)
+    comprehend = session.client("comprehend", region_name=region)
+
+    check = comprehend_guard.check_input(comprehend, question_text)
+    for warning in check.warnings:
+        typer.echo(f"[comprehend] WARNING: {warning}", err=True)
+    if check.blocked:
+        typer.echo(f"Blocked: PII detected in input ({', '.join(check.pii_entity_types)})", err=True)
+        raise typer.Exit(1)
 
     chunks = retrieve(agent_rt, kb_id, question_text)
     if not chunks:

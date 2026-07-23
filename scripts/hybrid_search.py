@@ -13,6 +13,8 @@ import requests
 import typer
 from requests_aws4auth import AWS4Auth
 
+import comprehend_guard
+
 TOP_K = 5
 PIPELINE_ID = "hybrid-pipeline"
 
@@ -215,6 +217,14 @@ def main(
     bedrock_agent_rt = session.client("bedrock-agent-runtime", region_name=rerank_region)
     dynamodb = session.client("dynamodb", region_name=region)
     ssm = session.client("ssm", region_name=region)
+    comprehend = session.client("comprehend", region_name=region)
+
+    check = comprehend_guard.check_input(comprehend, question_text)
+    for warning in check.warnings:
+        print(f"[comprehend] WARNING: {warning}", file=sys.stderr)
+    if check.blocked:
+        typer.echo(f"Blocked: PII detected in input ({', '.join(check.pii_entity_types)})", err=True)
+        raise typer.Exit(1)
 
     ensure_pipeline(endpoint, auth, bm25_weight, knn_weight)
 
