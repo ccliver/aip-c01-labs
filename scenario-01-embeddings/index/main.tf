@@ -1,6 +1,7 @@
 resource "opensearch_index" "chunks" {
-  name      = var.opensearch_index_name
-  index_knn = true
+  name          = var.opensearch_index_name
+  index_knn     = true
+  force_destroy = true
 
   mappings = jsonencode({
     properties = {

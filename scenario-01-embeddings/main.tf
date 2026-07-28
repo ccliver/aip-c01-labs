@@ -65,6 +65,10 @@ module "pdf_handler" {
   docker_image              = "ghcr.io/astral-sh/uv:python3.13-bookworm-slim"
   docker_additional_options = ["--platform", "linux/arm64"]
 
+  store_on_s3 = true
+  s3_bucket   = aws_s3_bucket.corpus.id
+  s3_prefix   = "lambda-builds/pdf-handler/"
+
   environment_variables = {
     POWERTOOLS_SERVICE_NAME = "${var.project}-pdf-handler"
     LOG_LEVEL               = "INFO"

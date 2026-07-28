@@ -90,8 +90,9 @@ resource "aws_opensearchserverless_access_policy" "kb_data" {
 
 # Bedrock does not auto-create the AOSS index; it must exist with Bedrock's expected field names.
 resource "opensearch_index" "kb" {
-  name      = local.kb_index_name
-  index_knn = true
+  name          = local.kb_index_name
+  index_knn     = true
+  force_destroy = true
 
   mappings = jsonencode({
     properties = {
