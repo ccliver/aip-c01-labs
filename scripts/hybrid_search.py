@@ -122,20 +122,19 @@ def expand_query(bedrock, prompt_arn: str, q: str, guardrail_config: Optional[di
 
 def generate_answer(bedrock, model_id: str, question: str, chunks: list, guardrail_config: Optional[dict] = None) -> tuple[str, bool]:
     grounding_source = "\n\n".join(h["_source"]["text"] for h in chunks)
+    if guardrail_config:
+        content = [
+            {"guardContent": {"text": {"text": grounding_source, "qualifiers": ["grounding_source"]}}},
+            {"guardContent": {"text": {"text": question, "qualifiers": ["query"]}}},
+        ]
+    else:
+        content = [{"text": f"{grounding_source}\n\n{question}"}]
     kwargs = {
         "modelId": model_id,
         "system": [
             {"text": "Answer the question using only the information in the provided context. If the context doesn't contain the answer, say so."}
         ],
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"guardContent": {"text": {"text": grounding_source, "qualifiers": ["grounding_source"]}}},
-                    {"guardContent": {"text": {"text": question, "qualifiers": ["query"]}}},
-                ],
-            }
-        ],
+        "messages": [{"role": "user", "content": content}],
     }
     if guardrail_config:
         kwargs["guardrailConfig"] = guardrail_config

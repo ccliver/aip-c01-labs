@@ -82,15 +82,36 @@ tasks:
         done
 
   # ─── Internal sentinel ─────────────────────────────────────────────────────
-  # Scenarios 02, 03, and 09 call this task as a dependency. It runs
-  # scenario-01:up only when the state file does not yet exist.
+  # Scenarios 02, 03, 06, and 09 call this task as a dependency. It runs
+  # scenario-01:up only when the state has no resources yet.
 
   _ensure-01:
     internal: true
     cmds:
       - task: scenario-01:up
     status:
-      - test -f scenario-01-embeddings/terraform.tfstate
+      - test -f scenario-01-embeddings/terraform.tfstate && jq -e '.resources | length > 0' scenario-01-embeddings/terraform.tfstate > /dev/null
+
+  # Scenario 05's test task calls this task as a dependency. It runs
+  # scenario-05:up only when the state has no resources yet.
+
+  _ensure-05:
+    internal: true
+    cmds:
+      - task: scenario-05:up
+    status:
+      - test -f scenario-05-guardrails/terraform.tfstate && jq -e '.resources | length > 0' scenario-05-guardrails/terraform.tfstate > /dev/null
+
+  # Scenario 06 calls this task as a dependency. It runs scenario-04:up only
+  # when the state has no resources yet — scenario-06 relies on scenario-04
+  # for account-level Model Invocation Logging, which it does not configure itself.
+
+  _ensure-04:
+    internal: true
+    cmds:
+      - task: scenario-04:up
+    status:
+      - test -f scenario-04-prompt-management/terraform.tfstate && jq -e '.resources | length > 0' scenario-04-prompt-management/terraform.tfstate > /dev/null
 
   # ─── Scenario 01 — Embeddings ─────────────────────────────────────────────
 
@@ -254,7 +275,8 @@ tasks:
       - terraform -chdir=scenario-05-guardrails destroy -auto-approve
 
   scenario-05:test:
-    desc: "Probe the scenario-05 guardrail with adversarial, benign, and grounding inputs (grounding case needs scenario-02 deployed)"
+    desc: "Probe the scenario-05 guardrail with adversarial, benign, and grounding inputs (deploys scenario-05 if absent; grounding case needs scenario-02 deployed)"
+    deps: [_ensure-05]
     cmds:
       - |
         export KB_ID=$(terraform -chdir=scenario-02-knowledge-bases output -raw knowledge_base_id 2>/dev/null || true)
@@ -263,13 +285,15 @@ tasks:
   # ─── Scenario 06 — Governance ─────────────────────────────────────────────
 
   scenario-06:plan:
-    desc: Preview scenario-06-governance changes
+    desc: Preview scenario-06-governance changes (deploys scenario-01 and scenario-04 if absent)
+    deps: [_ensure-01, _ensure-04]
     cmds:
       - terraform -chdir=scenario-06-governance init -input=false
       - terraform -chdir=scenario-06-governance plan
 
   scenario-06:up:
-    desc: Deploy scenario-06-governance
+    desc: Deploy scenario-06-governance (deploys scenario-01 and scenario-04 if absent)
+    deps: [_ensure-01, _ensure-04]
     cmds:
       - terraform -chdir=scenario-06-governance init -input=false
       - terraform -chdir=scenario-06-governance apply -auto-approve

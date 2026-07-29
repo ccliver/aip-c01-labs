@@ -8,7 +8,7 @@ data "aws_region" "current" {}
 
 locals {
   collection_endpoint = trimprefix(
-    data.terraform_remote_state.scenario01.outputs.opensearch_collection_endpoint, "https://")
+  data.terraform_remote_state.scenario01.outputs.opensearch_collection_endpoint, "https://")
   collection_arn = data.terraform_remote_state.scenario01.outputs.opensearch_collection_arn
   index_name     = data.terraform_remote_state.scenario01.outputs.opensearch_index_name
 }
@@ -194,7 +194,7 @@ locals {
         Type     = "Task"
         Resource = "arn:aws:states:::aws-sdk:bedrockruntime:converse"
         Parameters = {
-          ModelId  = var.claude_model_id
+          ModelId = var.claude_model_id
           Messages = [
             {
               Role    = "user"
