@@ -18,4 +18,9 @@ output "bedrock_invocation_logs_bucket_name" {
   value       = aws_s3_bucket.bedrock_invocation_logs.id
 }
 
+output "bedrock_invocation_logs_prefix" {
+  description = "S3 key prefix under which Bedrock model invocation logs land (scenario-06's Glue table location is built from this)"
+  value       = var.invocation_logs_prefix
+}
+
 # TODO: output "invoke_function_arn" — Lambda that invokes the versioned prompt

@@ -15,3 +15,9 @@ variable "foundation_model_id" {
   type        = string
   default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
+
+variable "invocation_logs_prefix" {
+  description = "S3 key prefix for Bedrock model invocation logs (consumed by scenario-06's Glue table)"
+  type        = string
+  default     = "invocation-logs/"
+}

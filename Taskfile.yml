@@ -303,6 +303,43 @@ tasks:
     cmds:
       - terraform -chdir=scenario-06-governance destroy -auto-approve
 
+  scenario-06:query:
+    desc: "Run a sample Athena query over Bedrock invocation logs — call/error counts and avg token counts by model (requires scenario-06 deployed)"
+    cmds:
+      - |
+        DB=$(terraform -chdir=scenario-06-governance output -raw glue_database_name)
+        WG=$(terraform -chdir=scenario-06-governance output -raw athena_workgroup_name)
+        QUERY='SELECT modelid, COUNT(*) AS invocation_count, COUNT_IF(errorcode IS NOT NULL) AS error_count, ROUND(AVG(input.inputtokencount), 1) AS avg_input_tokens, ROUND(AVG(output.outputtokencount), 1) AS avg_output_tokens FROM invocation_logs GROUP BY modelid ORDER BY invocation_count DESC'
+
+        QUERY_ID=$(aws athena start-query-execution \
+          --query-string "$QUERY" \
+          --query-execution-context Database="$DB" \
+          --work-group "$WG" \
+          --output text --query 'QueryExecutionId')
+        echo "→ query execution id: $QUERY_ID"
+
+        while true; do
+          STATE=$(aws athena get-query-execution --query-execution-id "$QUERY_ID" --query 'QueryExecution.Status.State' --output text)
+          case "$STATE" in
+            SUCCEEDED) break ;;
+            FAILED|CANCELLED)
+              echo "query $STATE:"
+              aws athena get-query-execution --query-execution-id "$QUERY_ID" --query 'QueryExecution.Status.StateChangeReason' --output text
+              exit 1
+              ;;
+          esac
+          sleep 2
+        done
+
+        # NULL cells (e.g. avg token counts for a model with only throttled/errored
+        # invocations) come back with no VarCharValue key at all rather than an
+        # empty string, so `Data[*].VarCharValue` silently drops that position and
+        # rows go ragged. map() over each row's Data array fills those gaps with
+        # "NULL" instead of skipping them, keeping every row the same width.
+        aws athena get-query-results --query-execution-id "$QUERY_ID" --output json \
+          | jq -r '.ResultSet.Rows[] | .Data | map(.VarCharValue // "NULL") | @tsv' \
+          | column -t -s $'\t'
+
   # ─── Scenario 07 — Cost Optimization ─────────────────────────────────────
 
   scenario-07:plan:

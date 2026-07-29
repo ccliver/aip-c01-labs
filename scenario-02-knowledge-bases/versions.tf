@@ -9,5 +9,9 @@ terraform {
       source  = "opensearch-project/opensearch"
       version = "~> 2.3"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "3.3.0"
+    }
   }
 }

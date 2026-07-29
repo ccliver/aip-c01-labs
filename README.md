@@ -15,14 +15,15 @@ cost control, and CI/CD for generative AI workloads.
 | 03 | [scenario-03-advanced-retrieval](./scenario-03-advanced-retrieval/) | Metadata filtering, hybrid search, and reranking on top of a Knowledge Base |
 | 04 | [scenario-04-prompt-management](./scenario-04-prompt-management/) | Version and deploy prompt templates with Bedrock Prompt Management |
 | 05 | [scenario-05-guardrails](./scenario-05-guardrails/) | Content filtering, PII redaction, and topic denial with Bedrock Guardrails |
-| 06 | [scenario-06-governance](./scenario-06-governance/) | Model access controls, CloudTrail audit logging, and Config compliance |
+| 06 | [scenario-06-governance](./scenario-06-governance/) | Model access controls, CloudTrail audit logging, Config compliance, and Athena querying of invocation logs |
 | 07 | [scenario-07-cost-optimization](./scenario-07-cost-optimization/) | Token budgets, cost dashboards, batch inference, and prompt caching |
 | 08 | [scenario-08-model-evaluation](./scenario-08-model-evaluation/) | Automatic model evaluation jobs and metric-based model comparison |
 | 09 | [scenario-09-troubleshooting](./scenario-09-troubleshooting/) | Reproduce and resolve throttling, permission, and RAG pipeline failures |
 | 10 | [scenario-10-cicd](./scenario-10-cicd/) | CodePipeline automating Terraform deploy and model evaluation gating |
 
-Scenarios 02, 03, and 09 depend on scenario-01 infrastructure. The Taskfile handles
-this dependency automatically.
+Scenarios 02, 03, 06, and 09 depend on scenario-01 infrastructure; scenario-06 also
+depends on scenario-04 (for its Bedrock model invocation logging). The Taskfile
+handles these dependencies automatically.
 
 ---
 
@@ -64,8 +65,8 @@ task scenario-03:down
 ```
 
 Available tasks follow the pattern `scenario-NN:{plan,up,down}` for each of the ten
-scenarios. Scenarios 02, 03, and 09 check for scenario-01 state before running and
-deploy it automatically if it is absent.
+scenarios. Scenarios 02, 03, 06, and 09 check for scenario-01 state before running
+and deploy it automatically if it is absent; scenario-06 also auto-deploys scenario-04.
 
 ---
 

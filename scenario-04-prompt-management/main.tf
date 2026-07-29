@@ -157,7 +157,7 @@ resource "aws_bedrock_model_invocation_logging_configuration" "this" {
 
     s3_config {
       bucket_name = aws_s3_bucket.bedrock_invocation_logs.id
-      key_prefix  = "invocation-logs/"
+      key_prefix  = var.invocation_logs_prefix
     }
   }
 

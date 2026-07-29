@@ -14,8 +14,10 @@ responsible AI requirements.
 | S3 bucket (logs) | Durable storage for CloudTrail and invocation log data |
 | IAM deny policy | Restricts `bedrock:InvokeModel` to an approved model allowlist |
 | AWS Config rule | Flags Bedrock resources that are missing mandatory cost-allocation tags |
+| Glue Data Catalog database + table | Schema mapped over scenario-04's Bedrock invocation logs in S3, for SQL querying via Athena |
+| Athena workgroup + S3 bucket (results) | Runs ad-hoc SQL against the invocation logs table; results land in a dedicated S3 prefix |
 
-> **Note:** Data-plane invocation logging (request/response payloads to CloudWatch Logs + S3) is configured in `scenario-04-prompt-management`, not here. `aws_bedrock_model_invocation_logging_configuration` is an account+region-wide singleton, so only one scenario can manage it — scenario-04 must stay deployed for it to be active.
+> **Note:** Data-plane invocation logging (request/response payloads to CloudWatch Logs + S3) is configured in `scenario-04-prompt-management`, not here. `aws_bedrock_model_invocation_logging_configuration` is an account+region-wide singleton, so only one scenario can manage it — scenario-04 must stay deployed for it to be active. This scenario's Glue table location is built from scenario-04's `bedrock_invocation_logs_bucket_name` / `bedrock_invocation_logs_prefix` outputs rather than a hardcoded path.
 
 ## Key concepts
 
@@ -24,6 +26,8 @@ responsible AI requirements.
 - **Invocation logging** — captures full prompt/completion payloads; useful for audit but sensitive — encrypt with KMS and restrict read access.
 - **AWS Config** — managed rules for tagging compliance; combine with Conformance Packs for a broader control baseline.
 - **Responsible AI governance** — data residency, model provenance, output accountability, and bias monitoring are all exam topics.
+- **Athena + Glue over invocation logs** — Athena is serverless SQL over data in S3; Glue Data Catalog supplies the schema (database/table) so Athena knows how to parse it. No ETL or servers to manage — a common pattern for ad-hoc analysis over log data that's too unstructured/high-volume for CloudWatch Logs Insights alone.
+- **What the invocation log schema does *not* have** — no per-request latency field. Bedrock's model invocation log entries (`schemaType: "ModelInvocationLog"`) carry `input.inputTokenCount` / `output.outputTokenCount`, `modelId`, `requestId`, `timestamp`, and `errorCode` on failures — but nothing timing-related. Real per-model latency lives only in the separate `AWS/Bedrock` CloudWatch `InvocationLatency` metric, not in these log files.
 
 ## What to observe
 
@@ -31,3 +35,4 @@ responsible AI requirements.
 2. Open CloudTrail → Event History and filter on source `bedrock.amazonaws.com`.
 3. Query invocation logs in CloudWatch Logs Insights for a specific request ID.
 4. Tag a Bedrock resource without the required `Project` tag and watch Config flag the violation.
+5. Run `task scenario-06:query` and compare invocation counts, error counts, and average token counts across models — driven entirely from real invocation log data in S3, not CloudWatch.

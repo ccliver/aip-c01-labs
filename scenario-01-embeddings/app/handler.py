@@ -1,6 +1,7 @@
 import io
 import json
 import os
+from datetime import datetime, timezone
 import boto3
 import fitz
 from aws_lambda_powertools import Logger
@@ -33,12 +34,19 @@ def chunk_text(text: str) -> list[str]:
 
 def store_chunks(bucket: str, source_key: str, chunks: list[str]) -> str:
     stem = os.path.splitext(os.path.basename(source_key))[0]
-    output_key = f"chunks/{stem}.json"
+    # Hive-style partition folder so Athena (scenario-06) can query this
+    # prefix with partition projection on ingestion_date, no crawler needed.
+    ingestion_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    output_key = f"chunks/ingestion_date={ingestion_date}/{stem}.json"
     payload = {
         "source_key": source_key,
         "chunk_size": CHUNK_SIZE,
         "chunk_overlap": CHUNK_OVERLAP,
         "total_chunks": len(chunks),
+        # The PDF's slug (e.g. "bedrock", "lambda") is the only domain signal
+        # available at ingestion time — one tag per file today, but modeled as
+        # a list since a chunk could plausibly span multiple domains later.
+        "domain_tags": [stem],
         "chunks": chunks,
     }
     s3.put_object(
