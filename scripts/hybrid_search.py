@@ -14,6 +14,7 @@ import typer
 from requests_aws4auth import AWS4Auth
 
 import comprehend_guard
+import cw_metrics
 
 TOP_K = 5
 PIPELINE_ID = "hybrid-pipeline"
@@ -99,6 +100,15 @@ def get_guardrail_config(ssm) -> Optional[dict]:
     return {"guardrailIdentifier": guardrail_id, "guardrailVersion": guardrail_version, "trace": "enabled"}
 
 
+def _prompt_version(prompt_arn: str) -> str:
+    """Prompt ARNs are arn:aws:bedrock:region:account:prompt/ID[:VERSION] — the
+    version suffix is only present for a numbered version; an unversioned ARN
+    always points at the mutable DRAFT (the Terraform provider has no versioned
+    prompt resource, so any numbering is done manually via console/CLI)."""
+    parts = prompt_arn.split(":")
+    return parts[6] if len(parts) > 6 else "DRAFT"
+
+
 def get_active_prompt_arn(dynamodb, table_name: str, prompt_id: str) -> str:
     resp = dynamodb.get_item(TableName=table_name, Key={"prompt_id": {"S": prompt_id}})
     item = resp.get("Item")
@@ -109,14 +119,16 @@ def get_active_prompt_arn(dynamodb, table_name: str, prompt_id: str) -> str:
     return item["active_version_arn"]["S"]
 
 
-def expand_query(bedrock, prompt_arn: str, q: str, guardrail_config: Optional[dict] = None) -> list[str]:
-    kwargs = {"modelId": prompt_arn, "promptVariables": {"question": {"text": q}}}
-    if guardrail_config:
-        kwargs["guardrailConfig"] = guardrail_config
-    resp = bedrock.converse(**kwargs)
+def expand_query(bedrock, prompt_arn: str, q: str) -> list[str]:
+    # No guardrailConfig here: Prompt Management's promptVariables has no
+    # guardContent variant, so a guardrail would evaluate the whole resolved
+    # template (including its own instructional text) as unqualified input —
+    # confirmed live, the template's "return only JSON" phrasing false-
+    # positives the PROMPT_ATTACK filter regardless of the actual question.
+    # This step never reaches the user directly; generate_answer() is what
+    # guards real output, with proper guardContent scoping.
+    resp = bedrock.converse(modelId=prompt_arn, promptVariables={"question": {"text": q}})
     text = resp["output"]["message"]["content"][0]["text"]
-    if resp["stopReason"] == "guardrail_intervened":
-        raise RuntimeError(f"Guardrail blocked query expansion input: {text}")
     return [q] + json.loads("[" + text)  # prefill trick forces JSON output
 
 
@@ -231,7 +243,7 @@ def main(
     ensure_pipeline(endpoint, auth, bm25_weight, knn_weight)
 
     guardrail_config = None
-    if query_expansion or generate:
+    if generate:
         guardrail_config = get_guardrail_config(ssm)
         if not guardrail_config:
             print("No guardrail found in SSM (scenario-05 must be deployed) — proceeding without one", file=sys.stderr)
@@ -239,7 +251,11 @@ def main(
     if query_expansion:
         print("Expanding query...", file=sys.stderr)
         prompt_arn = get_active_prompt_arn(dynamodb, ddb_table_name, prompt_id)
-        queries = expand_query(bedrock, prompt_arn, question_text, guardrail_config)
+        queries = expand_query(bedrock, prompt_arn, question_text)
+        cw_metrics.put_metric(
+            "PromptInvocations", 1,
+            {"Scenario": "04", "PromptId": prompt_id, "Version": _prompt_version(prompt_arn)},
+        )
         for i, q in enumerate(queries):
             print(f"  {'original' if i == 0 else f'variant {i}'}: {q}", file=sys.stderr)
 

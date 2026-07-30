@@ -16,6 +16,8 @@ import re
 import time
 from dataclasses import dataclass
 
+import cw_metrics
+
 NEGATIVE_SENTIMENT_THRESHOLD = 0.9
 LANGUAGE_CODE = "en"
 
@@ -73,13 +75,16 @@ def check_input(comprehend, text: str) -> ComprehendCheck:
     top_language = max(languages, key=lambda l: l["Score"]) if languages else {"LanguageCode": "unknown", "Score": 0.0}
 
     pii_entities = comprehend.detect_pii_entities(Text=text, LanguageCode=LANGUAGE_CODE)["Entities"]
+    pii_entity_types = sorted({e["Type"] for e in pii_entities})
+    for entity_type in pii_entity_types:
+        cw_metrics.put_metric("PIIDetectionEvents", 1, {"Scenario": "05", "Source": "Comprehend", "EntityType": entity_type})
 
     return ComprehendCheck(
         sentiment=sentiment,
         sentiment_score=sentiment_score,
         language_code=top_language["LanguageCode"],
         language_score=top_language["Score"],
-        pii_entity_types=sorted({e["Type"] for e in pii_entities}),
+        pii_entity_types=pii_entity_types,
     )
 
 

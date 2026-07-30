@@ -47,6 +47,13 @@ resource "aws_iam_role_policy" "lambda_exec" {
         Action   = ["aoss:APIAccessAll"]
         Resource = [local.collection_arn]
       },
+      {
+        Sid       = "CloudWatchMetrics"
+        Effect    = "Allow"
+        Action    = ["cloudwatch:PutMetricData"]
+        Resource  = "*"
+        Condition = { StringEquals = { "cloudwatch:namespace" = "AIP-C01/Lab" } }
+      },
     ]
   })
 }

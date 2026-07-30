@@ -14,6 +14,7 @@ from typing import Optional
 import boto3
 
 import comprehend_guard
+import cw_metrics
 
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 KB_ID = os.environ.get("KB_ID")
@@ -175,29 +176,34 @@ def grounding_score(resp: dict) -> Optional[float]:
     return None
 
 
+def _trace_assessments(resp: dict) -> list:
+    """Converse's assessments are nested under trace.guardrail.outputAssessments
+    (a dict of lists, keyed by guardContent qualifier) rather than the flat
+    resp["assessments"] direct ApplyGuardrail returns — flatten to one list so
+    both shapes can share the same policy-hit extraction."""
+    return [a for group in resp.get("trace", {}).get("guardrail", {}).get("outputAssessments", {}).values() for a in group]
+
+
+def _format_hit(filter_type: str, detail: str) -> str:
+    return f"{filter_type}:{detail!r}" if filter_type == "wordPolicy" else f"{filter_type}:{detail}"
+
+
 def intervention_reasons(resp: dict) -> list[str]:
     """Which policies actually fired — a stopReason of guardrail_intervened alone
     doesn't say whether it was grounding vs. topic/content/word/PII, and those
     can differ from what a given test case was trying to exercise."""
-    reasons = []
-    for assessments in resp.get("trace", {}).get("guardrail", {}).get("outputAssessments", {}).values():
-        for assessment in assessments:
-            for topic in assessment.get("topicPolicy", {}).get("topics", []):
-                if topic["action"] == "BLOCKED":
-                    reasons.append(f"topicPolicy:{topic['name']}")
-            for f in assessment.get("contentPolicy", {}).get("filters", []):
-                if f["action"] == "BLOCKED":
-                    reasons.append(f"contentPolicy:{f['type']}")
-            for w in assessment.get("wordPolicy", {}).get("customWords", []):
-                if w["action"] == "BLOCKED":
-                    reasons.append(f"wordPolicy:{w['match']!r}")
-            for e in assessment.get("sensitiveInformationPolicy", {}).get("piiEntities", []):
-                if e["action"] in ("BLOCKED", "ANONYMIZED"):
-                    reasons.append(f"piiPolicy:{e['type']}")
-            for f in assessment.get("contextualGroundingPolicy", {}).get("filters", []):
-                if f["action"] == "BLOCKED":
-                    reasons.append(f"contextualGroundingPolicy:{f['type']}(score={f['score']})")
-    return reasons
+    hits = cw_metrics.guardrail_policy_hits(_trace_assessments(resp))
+    return [_format_hit(filter_type, detail) for filter_type, detail in hits]
+
+
+def emit_pii_metrics(hits: list[tuple[str, str]]) -> None:
+    # Guardrail trigger rate is covered by the native AWS/Bedrock/Guardrails
+    # InvocationsIntervened metric (by GuardrailPolicyType) — no need to
+    # duplicate it here. PII has no native per-entity-type breakdown though,
+    # so that's still worth emitting ourselves.
+    for filter_type, detail in hits:
+        if filter_type == "piiPolicy":
+            cw_metrics.put_metric("PIIDetectionEvents", 1, {"Scenario": "05", "Source": "Guardrail", "EntityType": detail})
 
 
 def verdict_for(resp: dict) -> str:
@@ -217,6 +223,7 @@ for label, text, source in TEST_CASES:
     resp = apply_guardrail(text, source)
     verdict = verdict_for(resp)
     print(f"verdict: {verdict}  (action={resp['action']})")
+    emit_pii_metrics(cw_metrics.guardrail_policy_hits(resp.get("assessments", [])))
 
     if verdict == "MASKED":
         for assessment in resp.get("assessments", []):
@@ -250,6 +257,7 @@ for label, text in COMPREHEND_TEST_CASES:
     guardrail_resp = apply_guardrail(text, "INPUT")
     guardrail_verdict = verdict_for(guardrail_resp)
     print(f"guardrail:  verdict={guardrail_verdict}  (action={guardrail_resp['action']})")
+    emit_pii_metrics(cw_metrics.guardrail_policy_hits(guardrail_resp.get("assessments", [])))
 
     print("─" * 60)
 
@@ -305,5 +313,6 @@ else:
             if verdict == "BLOCKED":
                 print(f"  intervened on: {', '.join(intervention_reasons(resp)) or 'unknown'}")
             print(f"output:  {resp['output']['message']['content'][0]['text']}")
+            emit_pii_metrics(cw_metrics.guardrail_policy_hits(_trace_assessments(resp)))
 
             print("─" * 60)

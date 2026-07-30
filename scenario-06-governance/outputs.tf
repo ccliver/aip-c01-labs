@@ -32,3 +32,8 @@ output "kb_corpus_glue_table_name" {
   description = "Glue table mapped over scenario-01's KB corpus chunk metadata in S3"
   value       = aws_glue_catalog_table.kb_corpus_chunks.name
 }
+
+output "dashboard_url" {
+  description = "Console URL for the aip-c01-governance CloudWatch dashboard"
+  value       = "https://${data.aws_region.current.region}.console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.region}#dashboards:name=${aws_cloudwatch_dashboard.aip_c01_governance.dashboard_name}"
+}

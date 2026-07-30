@@ -15,26 +15,28 @@ Bedrock Model Invocation Logs (S3 + CWL, since Scenario 4)
   → Glue table "invocation_logs" → Athena queries
 
 S3 KB Corpus (Scenario 1/2 documents)
-  → Glue table "corpus_lineage" (source_key, chunk_size, chunk_overlap,
-    total_chunks, ingestion_date, domain_tags) → Athena queries (optional)
+  → Glue table "kb_corpus_chunks" (source_key, chunk_size, chunk_overlap,
+    total_chunks, domain_tags, partitioned by ingestion_date) → Athena queries (optional)
 
 CloudTrail trail (S3 delivery only)
   → Standard management events: InvokeModel, Converse (captured automatically)
   → Advanced event selectors (data events): Retrieve/RetrieveAndGenerate (KB),
     ApplyGuardrail + related Guardrails calls
 
-CloudWatch namespace "AIP-C01/Lab" (dimensions: Scenario, MetricName)
-  → Dashboard "aip-c01-governance": token usage by model, Guardrails trigger
-    rate, PII detection events, chunking/retrieval stats from Scenarios 1-3
+Dashboard "aip-c01-governance" — mixed native + custom metric sources:
+  → Token usage by model: native AWS/Bedrock (InputTokenCount/OutputTokenCount by ModelId)
+  → Guardrails trigger rate: native AWS/Bedrock/Guardrails (InvocationsIntervened by GuardrailPolicyType)
+  → PII detection events + chunking/retrieval stats (Scenarios 1-3): custom
+    CloudWatch namespace "AIP-C01/Lab" (dimensions: Scenario + per-metric-type keys)
 ```
 
 ## Key Concepts
 
 ### Glue Data Catalog + Athena
 Glue Data Catalog is a metastore, not a query engine — it's how Athena knows the schema of data
-sitting in S3 so it can run SQL against it. The invocation-logs table and the corpus-lineage table
-are two separate catalog entries serving two different governance questions: what the model did,
-versus what data fed it. Nothing in this lab automatically joins the two, but registering the
+sitting in S3 so it can run SQL against it. The `invocation_logs` table and the `kb_corpus_chunks`
+table are two separate catalog entries serving two different governance questions: what the model
+did, versus what data fed it. Nothing in this lab automatically joins the two, but registering the
 corpus with lineage metadata (`ingestion_date`, `domain_tags`) is itself the governance artifact an
 auditor wants to see, independent of whether a query ever touches it.
 
@@ -54,11 +56,25 @@ memorizing directly — getting InvokeModel and Retrieve backwards is an easy tr
 
 ### Governance Dashboard Scope
 This scenario's required metrics are token usage by model, Guardrails trigger rate, and PII
-detection events — all sourced from invocation logs. This build extended scope to also retroactively
-instrument Scenarios 1-3 (chunking stats, retrieval hits) under a single namespace
-(`AIP-C01/Lab`, dimensions `Scenario` + `MetricName`), specifically so Scenario 10 can add cache hit
-rate, retrieval latency p50/p99, cost per query, and hallucination flag rate as new widgets without
-restructuring anything.
+detection events. Rather than defaulting to custom metrics for all three, each was checked against
+AWS-native CloudWatch metrics first: `AWS/Bedrock` already publishes `InputTokenCount`/
+`OutputTokenCount` by `ModelId`, and `AWS/Bedrock/Guardrails` already publishes
+`InvocationsIntervened` by `GuardrailPolicyType` — both for free, no code required. The dashboard's
+"Token usage by model" and "Guardrails trigger rate" widgets read those native metrics directly,
+filtered to the specific models/policies this lab uses. PII detection has no native equivalent (no
+per-entity-type breakdown, and nothing for Comprehend's separate detection path, which is a
+different service entirely), so it stays a custom metric.
+
+This build also retroactively instrumented Scenarios 1-3 (chunking stats, retrieval hits) as custom
+metrics — no native equivalent exists for these app-level RAG pipeline concepts. Both custom
+metric types live under one namespace (`AIP-C01/Lab`, dimensions `Scenario` + per-metric-type
+keys), so a future scenario can add new metric names/dimension combos here without restructuring
+anything already emitting data — CloudWatch's (namespace, metric name, dimensions) model makes
+that safe by construction.
+
+**Lesson learned building this:** don't default to custom metrics just because a request describes
+the mechanism as "custom" — check for a native equivalent first, and only build custom
+instrumentation for the gap a native metric doesn't cover.
 
 ## What the Exam Expects You to Know
 
@@ -78,11 +94,12 @@ restructuring anything.
 
 - Query the invocation-logs Athena table and confirm you can filter by model ID, token counts,
   and timestamp
-- Compare the corpus-lineage table's fields against the invocation-logs table — confirm they're
-  registering genuinely different things, not duplicate data
+- Compare the `kb_corpus_chunks` table's fields against the `invocation_logs` table — confirm
+  they're registering genuinely different things, not duplicate data
 - In CloudTrail Event History, confirm `Retrieve`/`RetrieveAndGenerate` and `ApplyGuardrail` show
   up as data events, while `InvokeModel`/`Converse` show up as management events without any
   special trail config
-- On the dashboard, confirm metrics from Scenarios 1-3 (chunking, retrieval) and 4-6 (prompts,
-  Guardrails, tokens) are all visible under the same namespace, filterable by the `Scenario`
-  dimension
+- On the dashboard, confirm token usage and Guardrails trigger rate render from the native
+  `AWS/Bedrock`/`AWS/Bedrock/Guardrails` namespaces, while PII detection events and the Scenario
+  1-3 chunking/retrieval stats render from the custom `AIP-C01/Lab` namespace, filterable by the
+  `Scenario` dimension

@@ -70,11 +70,12 @@ module "pdf_handler" {
   s3_prefix   = "lambda-builds/pdf-handler/"
 
   environment_variables = {
-    POWERTOOLS_SERVICE_NAME = "${var.project}-pdf-handler"
-    LOG_LEVEL               = "INFO"
-    CHUNK_SIZE              = var.chunk_size
-    CHUNK_OVERLAP           = var.chunk_overlap
-    QUEUE_URL               = aws_sqs_queue.chunks.url
+    POWERTOOLS_SERVICE_NAME      = "${var.project}-pdf-handler"
+    POWERTOOLS_METRICS_NAMESPACE = "AIP-C01/Lab"
+    LOG_LEVEL                    = "INFO"
+    CHUNK_SIZE                   = var.chunk_size
+    CHUNK_OVERLAP                = var.chunk_overlap
+    QUEUE_URL                    = aws_sqs_queue.chunks.url
   }
 
   use_existing_cloudwatch_log_group = true

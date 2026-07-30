@@ -15,6 +15,19 @@ PIPELINE_ID = "hybrid-pipeline"
 
 session = boto3.Session()
 bedrock = session.client("bedrock-runtime", region_name=REGION)
+cloudwatch = session.client("cloudwatch", region_name=REGION)
+
+
+def _put_hit_metric(stage: str, count: int) -> None:
+    cloudwatch.put_metric_data(
+        Namespace="AIP-C01/Lab",
+        MetricData=[{
+            "MetricName": "RetrievalHits",
+            "Dimensions": [{"Name": "Scenario", "Value": "03"}, {"Name": "Stage", "Value": stage}],
+            "Value": count,
+            "Unit": "Count",
+        }],
+    )
 
 
 def _auth():
@@ -61,7 +74,7 @@ def _search(auth, query: str) -> list:
         },
     )
     resp.raise_for_status()
-    return [
+    hits = [
         {
             "chunk_id": h["_source"]["chunk_id"],
             "source_key": h["_source"]["source_key"],
@@ -70,6 +83,8 @@ def _search(auth, query: str) -> list:
         }
         for h in resp.json().get("hits", {}).get("hits", [])
     ]
+    _put_hit_metric("variant", len(hits))
+    return hits
 
 
 def _merge(question: str, results_sets: list) -> dict:
@@ -81,6 +96,7 @@ def _merge(question: str, results_sets: list) -> dict:
                 seen[cid] = r
 
     candidates = sorted(seen.values(), key=lambda x: x["score"], reverse=True)
+    _put_hit_metric("dedup", len(candidates))
 
     # PascalCase so the Step Functions SDK integration can pass Sources directly to Bedrock Rerank
     sources = [

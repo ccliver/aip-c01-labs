@@ -305,3 +305,95 @@ resource "aws_glue_catalog_table" "kb_corpus_chunks" {
     }
   }
 }
+
+# ─── Governance dashboard ──────────────────────────────────────────────────
+# Token usage and Guardrail trigger rate both use AWS-native metrics rather
+# than custom ones — AWS/Bedrock already publishes InputTokenCount/
+# OutputTokenCount by ModelId, and AWS/Bedrock/Guardrails already publishes
+# InvocationsIntervened by GuardrailPolicyType, both for free. Explicit metric
+# tuples (not SEARCH) here: CloudWatch's SEARCH '{Namespace,Dim}' schema
+# shorthand silently returns zero results for namespaces like "AIP-C01/Lab"
+# and "AWS/Bedrock/Guardrails" (confirmed live) — the long-form
+# Namespace="..." MetricName="..." predicate works, but explicit tuples also
+# let us filter token usage to just the models this lab actually uses,
+# excluding unrelated account noise. PII detection has no native equivalent
+# (no per-entity-type breakdown, nothing for Comprehend's separate path), so
+# it stays a custom metric grouped dynamically via the verified SEARCH form.
+resource "aws_cloudwatch_dashboard" "aip_c01_governance" {
+  dashboard_name = "aip-c01-governance"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Token usage by model (AWS/Bedrock native)"
+          region = data.aws_region.current.region
+          view   = "timeSeries"
+          metrics = [
+            ["AWS/Bedrock", "InputTokenCount", "ModelId", "amazon.titan-embed-text-v2:0", { stat = "Sum" }],
+            ["AWS/Bedrock", "InputTokenCount", "ModelId", "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0", { stat = "Sum" }],
+            ["AWS/Bedrock", "InputTokenCount", "ModelId", "us.anthropic.claude-haiku-4-5-20251001-v1:0", { stat = "Sum" }],
+            ["AWS/Bedrock", "OutputTokenCount", "ModelId", "us.anthropic.claude-haiku-4-5-20251001-v1:0", { stat = "Sum" }],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Guardrails trigger rate (AWS/Bedrock/Guardrails native)"
+          region = data.aws_region.current.region
+          view   = "timeSeries"
+          metrics = [
+            ["AWS/Bedrock/Guardrails", "InvocationsIntervened", "GuardrailPolicyType", "ContentPolicy", "Operation", "ApplyGuardrail", { stat = "Sum" }],
+            ["AWS/Bedrock/Guardrails", "InvocationsIntervened", "GuardrailPolicyType", "TopicPolicy", "Operation", "ApplyGuardrail", { stat = "Sum" }],
+            ["AWS/Bedrock/Guardrails", "InvocationsIntervened", "GuardrailPolicyType", "WordPolicy", "Operation", "ApplyGuardrail", { stat = "Sum" }],
+            ["AWS/Bedrock/Guardrails", "InvocationsIntervened", "GuardrailPolicyType", "SensitiveInformationPolicy", "Operation", "ApplyGuardrail", { stat = "Sum" }],
+            ["AWS/Bedrock/Guardrails", "InvocationsIntervened", "GuardrailPolicyType", "ContextualGroundingPolicy", "Operation", "ApplyGuardrail", { stat = "Sum" }],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title  = "PII detection events"
+          region = data.aws_region.current.region
+          view   = "timeSeries"
+          metrics = [
+            [{ expression = "SEARCH('Namespace=\"AIP-C01/Lab\" MetricName=\"PIIDetectionEvents\"', 'Sum', 300)", id = "e1" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Chunking / retrieval stats (scenarios 1-3)"
+          region = data.aws_region.current.region
+          view   = "timeSeries"
+          metrics = [
+            ["AIP-C01/Lab", "ChunkCount", "Scenario", "01", { stat = "Sum" }],
+            ["AIP-C01/Lab", "ChunkSize", "Scenario", "01", { stat = "Average" }],
+            ["AIP-C01/Lab", "RetrievalHits", "Scenario", "03", "Stage", "variant", { stat = "Sum" }],
+            ["AIP-C01/Lab", "RetrievalHits", "Scenario", "03", "Stage", "dedup", { stat = "Sum" }],
+          ]
+        }
+      },
+    ]
+  })
+}

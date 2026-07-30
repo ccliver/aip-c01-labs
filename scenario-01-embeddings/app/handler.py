@@ -4,11 +4,13 @@ import os
 from datetime import datetime, timezone
 import boto3
 import fitz
-from aws_lambda_powertools import Logger
+from aws_lambda_powertools import Logger, Metrics
+from aws_lambda_powertools.metrics import MetricUnit
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = Logger()
+metrics = Metrics()
 s3 = boto3.client("s3")
 sqs = boto3.client("sqs")
 
@@ -83,6 +85,11 @@ def process_record(bucket: str, key: str) -> dict:
     chunks = chunk_text(text)
     logger.info("Chunked", extra={"total_chunks": len(chunks), "chunk_size": CHUNK_SIZE, "chunk_overlap": CHUNK_OVERLAP})
 
+    metrics.add_dimension(name="Scenario", value="01")
+    metrics.add_metric(name="ChunkCount", unit=MetricUnit.Count, value=len(chunks))
+    for chunk in chunks:
+        metrics.add_metric(name="ChunkSize", unit=MetricUnit.Count, value=len(chunk))
+
     output_key = store_chunks(bucket, key, chunks)
     logger.info("Stored chunks", extra={"output_key": output_key})
 
@@ -93,6 +100,7 @@ def process_record(bucket: str, key: str) -> dict:
 
 
 @logger.inject_lambda_context
+@metrics.log_metrics
 def handler(event: dict, context: LambdaContext) -> dict:
     succeeded = []
     failed = []
