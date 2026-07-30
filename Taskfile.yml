@@ -1,4 +1,5 @@
 version: '3'
+silent: true
 
 env:
   AWS_PROFILE: lab
@@ -6,7 +7,6 @@ env:
 tasks:
 
   default:
-    silent: true
     cmds:
       - task -l
 
@@ -47,6 +47,24 @@ tasks:
         export OS_INDEX=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
         uv run scripts/knn_search.py {{.CLI_ARGS}}
 
+  # ─── Status ─────────────────────────────────────────────────────────────────
+
+  status:all:
+    desc: Print built/destroyed status for every scenario (state file resource count)
+    silent: true
+    cmds:
+      - |
+        for dir in scenario-01-embeddings scenario-02-knowledge-bases scenario-03-advanced-retrieval \
+                   scenario-04-prompt-management scenario-05-guardrails scenario-06-governance \
+                   scenario-07-cost-optimization scenario-08-model-evaluation scenario-09-troubleshooting \
+                   scenario-10-cicd; do
+          if [ -f "$dir/terraform.tfstate" ] && jq -e '.resources | length > 0' "$dir/terraform.tfstate" > /dev/null 2>&1; then
+            printf "%-32s built\n" "$dir"
+          else
+            printf "%-32s destroyed\n" "$dir"
+          fi
+        done
+
   # ─── Teardown ──────────────────────────────────────────────────────────────
 
   teardown:all:
@@ -65,10 +83,13 @@ tasks:
             echo "  skipping $1 (not deployed)"
           fi
         }
-        # Dependents of scenario-01 must go first
+        # Dependents of scenario-01 must go first. scenario-06 also reads
+        # scenario-04's outputs via terraform_remote_state (Glue table
+        # locations), so it must be destroyed before scenario-04 too.
         destroy_if_deployed scenario-03-advanced-retrieval
         destroy_if_deployed scenario-02-knowledge-bases
         destroy_if_deployed scenario-09-troubleshooting
+        destroy_if_deployed scenario-06-governance
         # scenario-01 after its dependents are gone (index submodule must go before the collection)
         if has_resources scenario-01-embeddings; then
           echo "→ destroying scenario-01-embeddings (and its index)"
@@ -76,8 +97,9 @@ tasks:
         else
           echo "  skipping scenario-01-embeddings (not deployed)"
         fi
+        destroy_if_deployed scenario-04-prompt-management
         # Independent scenarios — order doesn't matter
-        for dir in scenario-04-prompt-management scenario-05-guardrails scenario-06-governance scenario-07-cost-optimization scenario-08-model-evaluation scenario-10-cicd; do
+        for dir in scenario-05-guardrails scenario-07-cost-optimization scenario-08-model-evaluation scenario-10-cicd; do
           destroy_if_deployed "$dir"
         done
 
@@ -338,6 +360,34 @@ tasks:
         # "NULL" instead of skipping them, keeping every row the same width.
         aws athena get-query-results --query-execution-id "$QUERY_ID" --output json \
           | jq -r '.ResultSet.Rows[] | .Data | map(.VarCharValue // "NULL") | @tsv' \
+          | column -t -s $'\t'
+
+  scenario-06:trail-tail:
+    desc: "Print the last N events (default 20) delivered to the scenario-06 CloudTrail trail, across both management and data event categories (args: [N])"
+    cmds:
+      - |
+        N={{.CLI_ARGS}}
+        N=${N:-20}
+        BUCKET=$(terraform -chdir=scenario-06-governance output -raw cloudtrail_logs_bucket_name)
+        TMPDIR=$(mktemp -d)
+        trap 'rm -rf "$TMPDIR"' EXIT
+
+        # CloudTrail batches delivery every few minutes into many small files —
+        # grab the most recently-delivered ones rather than the whole prefix.
+        # Excludes zero-byte "folder marker" keys and CloudTrail-Digest/ files
+        # (log-file-validation digests — a different JSON shape, not .Records).
+        aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "AWSLogs/" \
+          --query "reverse(sort_by(Contents[?ends_with(Key, \`.json.gz\`) && !contains(Key, \`CloudTrail-Digest\`)], &LastModified))[:20].Key" \
+          --output text \
+          | tr '\t' '\n' \
+          | while read -r key; do
+              [ -n "$key" ] && aws s3 cp "s3://$BUCKET/$key" "$TMPDIR/" --only-show-errors
+            done
+
+        printf "%-24s  %-10s  %-24s  %s\n" "eventTime" "category" "eventSource" "eventName"
+        gunzip -c "$TMPDIR"/*.json.gz \
+          | jq -s '[.[].Records[]] | sort_by(.eventTime) | reverse | .[:'"$N"']
+              | .[] | [.eventTime, .eventCategory, .eventSource, .eventName] | @tsv' -r \
           | column -t -s $'\t'
 
   # ─── Scenario 07 — Cost Optimization ─────────────────────────────────────

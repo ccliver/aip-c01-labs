@@ -1,8 +1,3 @@
-# TODO: aws_cloudtrail — trail capturing all bedrock:* management events
-# TODO: aws_s3_bucket + aws_s3_bucket_policy — CloudTrail log destination
-# TODO: aws_iam_policy — deny bedrock:InvokeModel except for approved model IDs
-# TODO: aws_config_rule — detect Bedrock resources missing required tags
-
 # NOTE: aws_bedrock_model_invocation_logging_configuration is deployed by
 # scenario-04-prompt-management, not here — it's an account+region-wide
 # singleton, so only one scenario can own it. See its README for the CWL/S3
@@ -31,23 +26,137 @@ locals {
   invocation_logs_prefix = data.terraform_remote_state.scenario04.outputs.bedrock_invocation_logs_prefix
   kb_corpus_bucket       = data.terraform_remote_state.scenario01.outputs.corpus_bucket_name
   kb_chunks_prefix       = "chunks/"
+  cloudtrail_name        = "${var.project}-bedrock-trail"
+  cloudtrail_arn         = "arn:aws:cloudtrail:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:trail/${local.cloudtrail_name}"
+}
+
+# CloudTrail management events (account-wide) + Bedrock KB/Guardrail data events
+# ---
+# InvokeModel/Converse/ApplyGuardrail-adjacent Bedrock calls default to
+# management events, already covered below at no extra cost. Management events
+# can't be scoped to one eventSource here (Equals isn't supported, only
+# NotEquals for exclusions), so that selector is account-wide — filter to
+# bedrock.amazonaws.com at query time instead. ApplyGuardrail itself is the
+# exception: it's a data event under AWS::Bedrock::Guardrail, not management —
+# both that and AWS::Bedrock::KnowledgeBase (Retrieve/RetrieveAndGenerate) get
+# their own data-event selector below since those are the two data-event types
+# this repo exercises.
+resource "aws_s3_bucket" "cloudtrail_logs" {
+  bucket        = "${var.project}-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.region}-cloudtrail"
+  force_destroy = true
+}
+
+data "aws_iam_policy_document" "cloudtrail_logs_bucket" {
+  statement {
+    sid     = "AWSCloudTrailAclCheck"
+    effect  = "Allow"
+    actions = ["s3:GetBucketAcl"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+
+    resources = [aws_s3_bucket.cloudtrail_logs.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceArn"
+      values   = [local.cloudtrail_arn]
+    }
+  }
+
+  statement {
+    sid     = "AWSCloudTrailWrite"
+    effect  = "Allow"
+    actions = ["s3:PutObject"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+
+    resources = ["${aws_s3_bucket.cloudtrail_logs.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-acl"
+      values   = ["bucket-owner-full-control"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceArn"
+      values   = [local.cloudtrail_arn]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "cloudtrail_logs" {
+  bucket = aws_s3_bucket.cloudtrail_logs.id
+  policy = data.aws_iam_policy_document.cloudtrail_logs_bucket.json
+}
+
+resource "aws_cloudtrail" "bedrock" {
+  name                          = local.cloudtrail_name
+  s3_bucket_name                = aws_s3_bucket.cloudtrail_logs.id
+  include_global_service_events = false
+  is_multi_region_trail         = false
+  enable_log_file_validation    = true
+
+  # CloudTrail only supports NotEquals on eventSource for management-event
+  # selectors (to exclude noisy sources like KMS), not Equals to include just
+  # one — there's no way to scope a trail's management events to Bedrock only.
+  # This selector is account-wide for all management events; filter to Bedrock
+  # at query time in CloudTrail Event History / Lake instead.
+  advanced_event_selector {
+    name = "All management events"
+
+    field_selector {
+      field  = "eventCategory"
+      equals = ["Management"]
+    }
+  }
+
+  advanced_event_selector {
+    name = "Bedrock Knowledge Base data events"
+
+    field_selector {
+      field  = "eventCategory"
+      equals = ["Data"]
+    }
+    field_selector {
+      field  = "resources.type"
+      equals = ["AWS::Bedrock::KnowledgeBase"]
+    }
+  }
+
+  # ApplyGuardrail is a data event under AWS::Bedrock::Guardrail, not a
+  # management event — its own docs page says to look for it under data
+  # events, not the general "everything else is management" rule.
+  advanced_event_selector {
+    name = "Bedrock Guardrail data events"
+
+    field_selector {
+      field  = "eventCategory"
+      equals = ["Data"]
+    }
+    field_selector {
+      field  = "resources.type"
+      equals = ["AWS::Bedrock::Guardrail"]
+    }
+  }
+
+  depends_on = [aws_s3_bucket_policy.cloudtrail_logs]
 }
 
 # ─── Athena over Bedrock Model Invocation Logs ────────────────────────────
-# Bedrock delivers one gzip-compressed, newline-delimited JSON file per
-# invocation batch under <bucket>/<prefix>/AWSLogs/<account>/BedrockModelInvocationLogs/...
-# Athena scans every object under the table's LOCATION prefix regardless of
-# "subfolder" depth (S3 keys are flat), so pointing at the prefix root is enough —
-# no partitioning needed for a lab-scale volume of logs.
-#
-# Only fields that actually appear in the log schema are declared below
-# (confirmed against a live sample + AWS docs). Notably absent: any per-request
-# latency field — Bedrock does not include one in this log format. Real per-model
-# latency lives only in the separate AWS/Bedrock CloudWatch "InvocationLatency"
-# metric, not in these files. inputBodyJson/outputBodyJson are deliberately left
-# undeclared: their shape varies wildly by model (embedding vectors vs. chat
-# messages), and the JSON SerDe silently ignores undeclared fields rather than
-# erroring on the mismatch.
+# Athena scans every object under LOCATION regardless of "subfolder" depth
+# (S3 keys are flat), so the prefix root is enough — no partitioning needed
+# at lab scale. No latency field exists in this log schema (see README); real
+# per-model latency lives only in the CloudWatch InvocationLatency metric.
+# inputBodyJson/outputBodyJson are left undeclared since their shape varies by
+# model and the JSON SerDe just ignores undeclared fields.
 resource "aws_glue_catalog_database" "bedrock_logs" {
   name = "${replace(var.project, "-", "_")}_bedrock_logs"
 }
@@ -110,7 +219,8 @@ resource "aws_s3_bucket" "athena_results" {
 }
 
 resource "aws_athena_workgroup" "bedrock_logs" {
-  name = "${var.project}-bedrock-logs"
+  name          = "${var.project}-bedrock-logs"
+  force_destroy = true
 
   configuration {
     enforce_workgroup_configuration    = true

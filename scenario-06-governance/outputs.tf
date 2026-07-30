@@ -1,5 +1,12 @@
-# TODO: output "trail_arn" — ARN of the CloudTrail trail
-# TODO: output "invocation_log_bucket" — S3 bucket receiving Bedrock invocation logs
+output "cloudtrail_trail_arn" {
+  description = "ARN of the CloudTrail trail capturing Bedrock management events + KnowledgeBase data events"
+  value       = aws_cloudtrail.bedrock.arn
+}
+
+output "cloudtrail_logs_bucket_name" {
+  description = "S3 bucket receiving CloudTrail logs (force_destroy: wiped on terraform destroy)"
+  value       = aws_s3_bucket.cloudtrail_logs.id
+}
 
 output "glue_database_name" {
   description = "Glue Data Catalog database containing the invocation_logs table"
