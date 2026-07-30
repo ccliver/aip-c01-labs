@@ -1,43 +1,88 @@
-# Scenario 06 — Governance
+# Scenario 6 — AI Governance, Compliance & Audit Pipeline
 
-## Goal
+## What This Scenario Builds
 
-Implement model access controls, invocation audit logging, and resource compliance
-checks to build a governed Bedrock environment aligned with enterprise security and
-responsible AI requirements.
+A queryable audit trail spanning three layers: a Glue Data Catalog + Athena setup over Bedrock
+Model Invocation Logs (what the model did), a separate Glue table with lineage metadata over the
+KB corpus in S3 (what data it's allowed to draw from), a CloudTrail trail with advanced event
+selectors for the Bedrock operations that count as data events, and a CloudWatch dashboard rolling
+up governance metrics across the whole lab so far.
 
-## Infrastructure deployed
+## Architecture
 
-| Resource | Purpose |
-|---|---|
-| CloudTrail trail | Records all account management events (CloudTrail can't scope management events to one source — see note below) plus `AWS::Bedrock::KnowledgeBase` and `AWS::Bedrock::Guardrail` data events, to S3 |
-| S3 bucket (CloudTrail logs) | Durable storage for the trail; `force_destroy = true` wipes all delivered logs on `terraform destroy` |
-| IAM deny policy | Restricts `bedrock:InvokeModel` to an approved model allowlist |
-| AWS Config rule | Flags Bedrock resources that are missing mandatory cost-allocation tags |
-| Glue Data Catalog database + table (`invocation_logs`) | Schema mapped over scenario-04's Bedrock invocation logs in S3, for SQL querying via Athena |
-| Glue Data Catalog database + table (`kb_corpus_chunks`) | Schema mapped over scenario-01's KB corpus chunk metadata (`source_key`, `chunk_size`, `chunk_overlap`, `total_chunks`, `domain_tags`), partitioned by `ingestion_date` via Athena partition projection |
-| Athena workgroup + S3 bucket (results) | Runs ad-hoc SQL against either Glue table; results land in a dedicated S3 prefix |
+```
+Bedrock Model Invocation Logs (S3 + CWL, since Scenario 4)
+  → Glue table "invocation_logs" → Athena queries
 
-> **Note:** Data-plane invocation logging (request/response payloads to CloudWatch Logs + S3) is configured in `scenario-04-prompt-management`, not here. `aws_bedrock_model_invocation_logging_configuration` is an account+region-wide singleton, so only one scenario can manage it — scenario-04 must stay deployed for it to be active. This scenario's Glue tables build their S3 locations from scenario-01's/scenario-04's outputs rather than hardcoded paths.
+S3 KB Corpus (Scenario 1/2 documents)
+  → Glue table "corpus_lineage" (source_key, chunk_size, chunk_overlap,
+    total_chunks, ingestion_date, domain_tags) → Athena queries (optional)
 
-## Key concepts
+CloudTrail trail (S3 delivery only)
+  → Standard management events: InvokeModel, Converse (captured automatically)
+  → Advanced event selectors (data events): Retrieve/RetrieveAndGenerate (KB),
+    ApplyGuardrail + related Guardrails calls
 
-- **Model access controls** — IAM condition key `bedrock:ModelId` limits which model ARNs a principal may invoke; combine with SCPs for account-wide enforcement.
-- **CloudTrail management vs. data events for Bedrock** — `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`, and `ConverseStream` are explicitly documented as CloudTrail **management** events; every other Bedrock API operation defaults to management too — *except* the specific set called out as data events: `Retrieve`/`RetrieveAndGenerate` (`AWS::Bedrock::KnowledgeBase`, used by scenario-02), `ApplyGuardrail` (`AWS::Bedrock::Guardrail`, used by scenario-05 — its own docs page says to look for it under data events, not the general rule), `InvokeAgent` (`AWS::Bedrock::AgentAlias`), and `InvokeFlow` (`AWS::Bedrock::FlowAlias`). A trail can use basic *or* advanced event selectors, never both — this trail expresses management events as an advanced selector too (`eventCategory=Management`) so it can combine with the two data-event selectors on one trail.
-- **CloudTrail can't scope management events to one source** — a natural instinct is to add an `eventSource=bedrock.amazonaws.com` field selector alongside `eventCategory=Management` to keep the trail Bedrock-only. The API rejects it (`InvalidEventSelectorsException`): `eventSource` only supports `NotEquals` for management-event selectors (used to *exclude* a noisy source like `kms.amazonaws.com`), not `Equals` to *include* just one. A trail's management events are inherently account-wide; the only narrowing available is filtering at query time in CloudTrail Event History or CloudTrail Lake.
-- **Invocation logging** — captures full prompt/completion payloads; useful for audit but sensitive — encrypt with KMS and restrict read access.
-- **AWS Config** — managed rules for tagging compliance; combine with Conformance Packs for a broader control baseline.
-- **Responsible AI governance** — data residency, model provenance, output accountability, and bias monitoring are all exam topics.
-- **Athena + Glue over invocation logs** — Athena is serverless SQL over data in S3; Glue Data Catalog supplies the schema (database/table) so Athena knows how to parse it. No ETL or servers to manage — a common pattern for ad-hoc analysis over log data that's too unstructured/high-volume for CloudWatch Logs Insights alone.
-- **What the invocation log schema does *not* have** — no per-request latency field. Bedrock's model invocation log entries (`schemaType: "ModelInvocationLog"`) carry `input.inputTokenCount` / `output.outputTokenCount`, `modelId`, `requestId`, `timestamp`, and `errorCode` on failures — but nothing timing-related. Real per-model latency lives only in the separate `AWS/Bedrock` CloudWatch `InvocationLatency` metric, not in these log files.
-- **Partition projection over Hive-style partitioning** — the `kb_corpus_chunks` table computes its `ingestion_date` partition locations formulaically instead of tracking a partition list in the Glue metastore, so new days show up automatically with no crawler or `MSCK REPAIR TABLE` step.
+CloudWatch namespace "AIP-C01/Lab" (dimensions: Scenario, MetricName)
+  → Dashboard "aip-c01-governance": token usage by model, Guardrails trigger
+    rate, PII detection events, chunking/retrieval stats from Scenarios 1-3
+```
 
-## What to observe
+## Key Concepts
 
-1. Attempt to call a non-approved model ID — observe the IAM `Deny` in the error response.
-2. Open CloudTrail → Event History and filter on source `bedrock.amazonaws.com` — note `InvokeModel`/`Converse` calls appear as `Management` events with no extra setup. Event History only supports management events, so this view can never show the two data-event types below, no matter how the trail is configured.
-3. Run a retrieval via scenario-02 (`task scenario-02:retrieve`) and a guardrail probe via scenario-05 (`task scenario-05:test`), then find the corresponding `Retrieve`/`ApplyGuardrail` `Data` events using `task scenario-06:trail-tail` (reads the trail's S3-delivered logs directly, since Event History can't show them).
-4. Query invocation logs in CloudWatch Logs Insights for a specific request ID.
-5. Tag a Bedrock resource without the required `Project` tag and watch Config flag the violation.
-6. Run `task scenario-06:query` and compare invocation counts, error counts, and average token counts across models — driven entirely from real invocation log data in S3, not CloudWatch.
-7. `terraform destroy` scenario-06 and confirm the CloudTrail S3 bucket is gone rather than left behind with orphaned logs.
+### Glue Data Catalog + Athena
+Glue Data Catalog is a metastore, not a query engine — it's how Athena knows the schema of data
+sitting in S3 so it can run SQL against it. The invocation-logs table and the corpus-lineage table
+are two separate catalog entries serving two different governance questions: what the model did,
+versus what data fed it. Nothing in this lab automatically joins the two, but registering the
+corpus with lineage metadata (`ingestion_date`, `domain_tags`) is itself the governance artifact an
+auditor wants to see, independent of whether a query ever touches it.
+
+### Athena+Glue vs. CloudWatch Logs Insights
+Logs Insights is for ad-hoc, recent-window investigation scoped to CloudWatch (used in Scenario 9
+for hallucination-signal parsing) — fast, no setup, limited retention. Athena+Glue is for durable,
+structured querying over long retention periods directly against S3 — cheaper at scale, supports
+joins across sources, and gives a SQL interface to someone who isn't going to learn Logs Insights
+syntax (e.g., a compliance auditor). Use case, not just tooling preference, decides which fits.
+
+### CloudTrail: Management Events vs. Data Events
+`InvokeModel` and `Converse` are CloudTrail **management events** — any standard trail captures
+them with no extra config. The Bedrock operations that are genuine **data events**, requiring
+advanced event selectors, are KB `Retrieve`/`RetrieveAndGenerate`, `InvokeAgent`, `InvokeFlow`, and
+Guardrails calls (`ApplyGuardrail` and related). This is a common point of confusion and worth
+memorizing directly — getting InvokeModel and Retrieve backwards is an easy trap on this exam.
+
+### Governance Dashboard Scope
+This scenario's required metrics are token usage by model, Guardrails trigger rate, and PII
+detection events — all sourced from invocation logs. This build extended scope to also retroactively
+instrument Scenarios 1-3 (chunking stats, retrieval hits) under a single namespace
+(`AIP-C01/Lab`, dimensions `Scenario` + `MetricName`), specifically so Scenario 10 can add cache hit
+rate, retrieval latency p50/p99, cost per query, and hallucination flag rate as new widgets without
+restructuring anything.
+
+## What the Exam Expects You to Know
+
+- Model Invocation Logs are the primary forensic mechanism for FM interactions — capture request,
+  response, token counts, latency; do not capture Guardrails' internal scoring
+- CloudTrail covers the control plane; invocation logs cover the data plane
+- InvokeModel/Converse are management events; KB retrieval, InvokeAgent, InvokeFlow, and Guardrails
+  calls are data events requiring advanced event selectors
+- Glue Data Catalog + Athena is the standard AWS pattern for SQL access over unstructured S3 log/
+  document data — know it as a governance/compliance pattern, not deep Athena SQL or crawler config
+- Data lineage means documenting what source data fed a KB/model, tagged with origin and ingestion
+  metadata — a registered catalog entry counts as lineage documentation even without an automated
+  consumer
+- SageMaker Model Cards: awareness only, exam tests recognition not authoring
+
+## What to Observe
+
+- Query the invocation-logs Athena table and confirm you can filter by model ID, token counts,
+  and timestamp
+- Compare the corpus-lineage table's fields against the invocation-logs table — confirm they're
+  registering genuinely different things, not duplicate data
+- In CloudTrail Event History, confirm `Retrieve`/`RetrieveAndGenerate` and `ApplyGuardrail` show
+  up as data events, while `InvokeModel`/`Converse` show up as management events without any
+  special trail config
+- On the dashboard, confirm metrics from Scenarios 1-3 (chunking, retrieval) and 4-6 (prompts,
+  Guardrails, tokens) are all visible under the same namespace, filterable by the `Scenario`
+  dimension
