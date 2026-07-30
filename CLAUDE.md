@@ -52,3 +52,36 @@ Known gotchas already confirmed against docs/live testing (don't re-derive these
 - Comprehend's PII detection (`detect_pii_entities`) only supports English and
   Spanish `LanguageCode` values — don't wire in a dynamically detected language from
   `detect_dominant_language` without checking it's one of those two first.
+- CloudTrail advanced event selectors: `eventSource` only supports `NotEquals` on a
+  management-event selector (to exclude a noisy source like `kms.amazonaws.com`),
+  never `Equals` to include just one — there's no way to scope a trail's management
+  events down to Bedrock only. Confirmed via a live `InvalidEventSelectorsException`
+  and the CloudTrail docs' only documented `eventSource` examples being exclusions.
+- `ApplyGuardrail` is a CloudTrail **data** event (`AWS::Bedrock::Guardrail`), not a
+  management event, despite looking like a normal Bedrock Runtime call. Its own docs
+  page explicitly routes monitoring it to the data-events guide — don't assume it
+  falls under "everything else defaults to management."
+- CloudWatch Logs metric filter dimension values must be `$.field` selectors into the
+  matched log event — a static label (e.g. `"Input"`/`"Output"`) is rejected with
+  "dimension value must be valid selector." Encode a fixed distinction via separate
+  metric names instead of a literal-valued dimension. Also: a metric filter rejects
+  `default_value` once `dimensions` are set on the transformation.
+- CloudWatch metric math `SEARCH()`'s `{Namespace,Dimension}` shorthand schema
+  silently returns zero results (no error) for some real namespaces — confirmed for
+  a custom namespace with a hyphen (`AIP-C01/Lab`) and a multi-segment AWS namespace
+  (`AWS/Bedrock/Guardrails`), while working fine for `AWS/Bedrock`. The verbose
+  `Namespace="..." MetricName="..."` predicate form works reliably in every case
+  tested — prefer it, or explicit metric tuples, over the shorthand.
+- Bedrock Prompt Management's `promptVariables` only supports a plain `{"text":
+  ...}` value — no `guardContent`-tagged variant. A `guardrailConfig` attached to a
+  Prompt-Management Converse call (`modelId=<prompt ARN>`) therefore evaluates the
+  *entire* resolved template — including the developer's own instructional wrapper
+  text — as unqualified input. This can false-positive the `PROMPT_ATTACK` content
+  filter on a completely benign user question if the template's own phrasing (e.g.
+  "return only JSON, no markdown") resembles a jailbreak pattern. Confirmed live via
+  the guardrail trace. If the guardrail only matters for user-facing output, consider
+  dropping `guardrailConfig` from internal steps like query expansion instead.
+- Native `AWS/Bedrock` CloudWatch metrics' `ModelId` dimension resolves to the
+  underlying foundation model actually invoked, even when the Converse call's
+  `modelId` was a Prompt Management prompt ARN — there's no native way to track
+  invocation counts per prompt or prompt version, only per underlying model.
