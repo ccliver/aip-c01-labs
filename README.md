@@ -21,9 +21,19 @@ cost control, and CI/CD for generative AI workloads.
 | 09 | [scenario-09-troubleshooting](./scenario-09-troubleshooting/) | Reproduce and resolve throttling, permission, and RAG pipeline failures |
 | 10 | [scenario-10-cicd](./scenario-10-cicd/) | CodePipeline automating Terraform deploy and model evaluation gating |
 
-Scenarios 02, 03, 06, and 09 depend on scenario-01 infrastructure; scenario-06 also
-depends on scenario-04 (for its Bedrock model invocation logging). The Taskfile
-handles these dependencies automatically.
+### Scenario dependencies
+
+| Scenario | Depends on | Why |
+|---|---|---|
+| 02 — Knowledge Bases | 01 | Reuses scenario-01's corpus S3 bucket and OpenSearch Serverless collection as the KB vector store (`terraform_remote_state`) |
+| 03 — Advanced Retrieval | 01 | Queries scenario-01's OpenSearch collection/index directly for hybrid search and reranking (`terraform_remote_state`) |
+| 06 — Governance | 01, 04 | Athena/Glue query scenario-01's corpus bucket for KB corpus metadata, and scenario-04's Bedrock invocation-logging bucket (`terraform_remote_state`); scenario-04's account-wide model invocation logging config must also stay deployed for data to keep flowing |
+| 09 — Troubleshooting | 01 | Probe Lambda reproduces RAG pipeline failures against scenario-01's embeddings pipeline |
+
+Scenarios 01, 04, 05, 07, 08, and 10 have no dependencies and can be deployed in any
+order. The Taskfile enforces the table above automatically — `scenario-02:up`,
+`scenario-03:up`, `scenario-06:up`, and `scenario-09:up` deploy scenario-01 first if
+its state is empty, and `scenario-06:up` also auto-deploys scenario-04.
 
 ---
 
