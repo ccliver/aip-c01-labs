@@ -9,7 +9,7 @@ from aws_lambda_powertools.metrics import MetricUnit
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-logger = Logger()
+logger = Logger(service=os.environ["SERVICE_NAME"])
 metrics = Metrics()
 s3 = boto3.client("s3")
 sqs = boto3.client("sqs")

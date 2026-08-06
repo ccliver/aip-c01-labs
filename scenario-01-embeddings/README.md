@@ -6,6 +6,14 @@ An end-to-end document ingestion pipeline that takes PDF files from S3, extracts
 the text, generates vector embeddings, and indexes them in OpenSearch Serverless for semantic
 search.
 
+## Deploy / destroy order
+
+The OpenSearch index lives in a separate `index/` submodule from the collection it's
+hosted in, since the index resource needs the collection's endpoint as an input.
+`task scenario-01:up` applies the collection first, then the index. `task
+scenario-01:down` reverses that — index first, then collection — since the collection
+can't be destroyed while the index still exists inside it.
+
 ## Pipeline Architecture
 
 ```

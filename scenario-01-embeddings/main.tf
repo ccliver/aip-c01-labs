@@ -70,7 +70,7 @@ module "pdf_handler" {
   s3_prefix   = "lambda-builds/pdf-handler/"
 
   environment_variables = {
-    POWERTOOLS_SERVICE_NAME      = "${var.project}-pdf-handler"
+    SERVICE_NAME                 = "${var.project}-pdf-handler"
     POWERTOOLS_METRICS_NAMESPACE = "AIP-C01/Lab"
     LOG_LEVEL                    = "INFO"
     CHUNK_SIZE                   = var.chunk_size
