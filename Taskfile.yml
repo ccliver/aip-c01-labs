@@ -8,7 +8,7 @@ tasks:
 
   default:
     cmds:
-      - task -l
+      - task --list-all
 
   # ─── Docs ──────────────────────────────────────────────────────────────────
 
@@ -137,14 +137,7 @@ tasks:
 
   # ─── Scenario 01 — Embeddings ─────────────────────────────────────────────
 
-  scenario-01:plan:
-    desc: Preview scenario-01-embeddings changes
-    cmds:
-      - terraform -chdir=scenario-01-embeddings init -input=false
-      - terraform -chdir=scenario-01-embeddings plan
-
   scenario-01:up:
-    desc: Deploy scenario-01-embeddings (collection, queues, lambdas, then the OpenSearch index)
     cmds:
       - docker pull --platform linux/arm64 ghcr.io/astral-sh/uv:python3.13-bookworm-slim
       - terraform -chdir=scenario-01-embeddings init -input=false
@@ -156,7 +149,6 @@ tasks:
           -var opensearch_index_name=$(terraform -chdir=scenario-01-embeddings output -raw opensearch_index_name)
 
   scenario-01:down:
-    desc: Destroy scenario-01-embeddings (the OpenSearch index first, then the collection it lives in)
     cmds:
       - |
         if [ -f scenario-01-embeddings/index/terraform.tfstate ]; then
@@ -168,15 +160,7 @@ tasks:
 
   # ─── Scenario 02 — Knowledge Bases ────────────────────────────────────────
 
-  scenario-02:plan:
-    desc: Preview scenario-02-knowledge-bases changes (deploys scenario-01 if absent)
-    deps: [_ensure-01]
-    cmds:
-      - terraform -chdir=scenario-02-knowledge-bases init -input=false
-      - terraform -chdir=scenario-02-knowledge-bases plan
-
   scenario-02:up:
-    desc: Deploy scenario-02-knowledge-bases (deploys scenario-01 if absent)
     deps: [_ensure-01]
     cmds:
       - terraform -chdir=scenario-02-knowledge-bases init -input=false
@@ -198,21 +182,12 @@ tasks:
         uv run scripts/kb_retrieve.py {{.CLI_ARGS}}
 
   scenario-02:down:
-    desc: Destroy scenario-02-knowledge-bases
     cmds:
       - terraform -chdir=scenario-02-knowledge-bases destroy -auto-approve
 
   # ─── Scenario 03 — Advanced Retrieval ─────────────────────────────────────
 
-  scenario-03:plan:
-    desc: Preview scenario-03-advanced-retrieval changes (deploys scenario-01 if absent)
-    deps: [_ensure-01]
-    cmds:
-      - terraform -chdir=scenario-03-advanced-retrieval init -input=false
-      - terraform -chdir=scenario-03-advanced-retrieval plan
-
   scenario-03:up:
-    desc: Deploy scenario-03-advanced-retrieval (deploys scenario-01 if absent)
     deps: [_ensure-01]
     cmds:
       - docker pull --platform linux/arm64 public.ecr.aws/sam/build-python3.13
@@ -254,45 +229,28 @@ tasks:
           --output json | jq 'if .status == "SUCCEEDED" then .output | fromjson else {status: .status, error: .error, cause: .cause} end'
 
   scenario-03:down:
-    desc: Destroy scenario-03-advanced-retrieval
     cmds:
       - terraform -chdir=scenario-03-advanced-retrieval destroy -auto-approve
 
   # ─── Scenario 04 — Prompt Management ─────────────────────────────────────
 
-  scenario-04:plan:
-    desc: Preview scenario-04-prompt-management changes
-    cmds:
-      - terraform -chdir=scenario-04-prompt-management init -input=false
-      - terraform -chdir=scenario-04-prompt-management plan
-
   scenario-04:up:
-    desc: Deploy scenario-04-prompt-management
     cmds:
       - terraform -chdir=scenario-04-prompt-management init -input=false
       - terraform -chdir=scenario-04-prompt-management apply -auto-approve
 
   scenario-04:down:
-    desc: Destroy scenario-04-prompt-management
     cmds:
       - terraform -chdir=scenario-04-prompt-management destroy -auto-approve
 
   # ─── Scenario 05 — Guardrails ─────────────────────────────────────────────
 
-  scenario-05:plan:
-    desc: Preview scenario-05-guardrails changes
-    cmds:
-      - terraform -chdir=scenario-05-guardrails init -input=false
-      - terraform -chdir=scenario-05-guardrails plan
-
   scenario-05:up:
-    desc: Deploy scenario-05-guardrails
     cmds:
       - terraform -chdir=scenario-05-guardrails init -input=false
       - terraform -chdir=scenario-05-guardrails apply -auto-approve
 
   scenario-05:down:
-    desc: Destroy scenario-05-guardrails
     cmds:
       - terraform -chdir=scenario-05-guardrails destroy -auto-approve
 
@@ -306,22 +264,13 @@ tasks:
 
   # ─── Scenario 06 — Governance ─────────────────────────────────────────────
 
-  scenario-06:plan:
-    desc: Preview scenario-06-governance changes (deploys scenario-01 and scenario-04 if absent)
-    deps: [_ensure-01, _ensure-04]
-    cmds:
-      - terraform -chdir=scenario-06-governance init -input=false
-      - terraform -chdir=scenario-06-governance plan
-
   scenario-06:up:
-    desc: Deploy scenario-06-governance (deploys scenario-01 and scenario-04 if absent)
     deps: [_ensure-01, _ensure-04]
     cmds:
       - terraform -chdir=scenario-06-governance init -input=false
       - terraform -chdir=scenario-06-governance apply -auto-approve
 
   scenario-06:down:
-    desc: Destroy scenario-06-governance
     cmds:
       - terraform -chdir=scenario-06-governance destroy -auto-approve
 
@@ -392,78 +341,51 @@ tasks:
 
   # ─── Scenario 07 — Cost Optimization ─────────────────────────────────────
 
-  scenario-07:plan:
-    desc: Preview scenario-07-cost-optimization changes
-    cmds:
-      - terraform -chdir=scenario-07-cost-optimization init -input=false
-      - terraform -chdir=scenario-07-cost-optimization plan
-
   scenario-07:up:
-    desc: Deploy scenario-07-cost-optimization
     cmds:
       - terraform -chdir=scenario-07-cost-optimization init -input=false
       - terraform -chdir=scenario-07-cost-optimization apply -auto-approve
 
   scenario-07:down:
-    desc: Destroy scenario-07-cost-optimization
     cmds:
       - terraform -chdir=scenario-07-cost-optimization destroy -auto-approve
 
+  scenario-07:token-metrics:
+    desc: "Probe Bedrock Converse token usage for Haiku and Sonnet and emit CloudWatch metrics (args: [--use-case NAME])"
+    cmds:
+      - uv run scripts/bedrock_token_metrics.py --haiku {{.CLI_ARGS}}
+      - uv run scripts/bedrock_token_metrics.py --sonnet {{.CLI_ARGS}}
+
   # ─── Scenario 08 — Model Evaluation ──────────────────────────────────────
 
-  scenario-08:plan:
-    desc: Preview scenario-08-model-evaluation changes
-    cmds:
-      - terraform -chdir=scenario-08-model-evaluation init -input=false
-      - terraform -chdir=scenario-08-model-evaluation plan
-
   scenario-08:up:
-    desc: Deploy scenario-08-model-evaluation
     cmds:
       - terraform -chdir=scenario-08-model-evaluation init -input=false
       - terraform -chdir=scenario-08-model-evaluation apply -auto-approve
 
   scenario-08:down:
-    desc: Destroy scenario-08-model-evaluation
     cmds:
       - terraform -chdir=scenario-08-model-evaluation destroy -auto-approve
 
   # ─── Scenario 09 — Troubleshooting ────────────────────────────────────────
 
-  scenario-09:plan:
-    desc: Preview scenario-09-troubleshooting changes (deploys scenario-01 if absent)
-    deps: [_ensure-01]
-    cmds:
-      - terraform -chdir=scenario-09-troubleshooting init -input=false
-      - terraform -chdir=scenario-09-troubleshooting plan
-
   scenario-09:up:
-    desc: Deploy scenario-09-troubleshooting (deploys scenario-01 if absent)
     deps: [_ensure-01]
     cmds:
       - terraform -chdir=scenario-09-troubleshooting init -input=false
       - terraform -chdir=scenario-09-troubleshooting apply -auto-approve
 
   scenario-09:down:
-    desc: Destroy scenario-09-troubleshooting
     cmds:
       - terraform -chdir=scenario-09-troubleshooting destroy -auto-approve
 
   # ─── Scenario 10 — CI/CD ─────────────────────────────────────────────────
 
-  scenario-10:plan:
-    desc: Preview scenario-10-cicd changes
-    cmds:
-      - terraform -chdir=scenario-10-cicd init -input=false
-      - terraform -chdir=scenario-10-cicd plan
-
   scenario-10:up:
-    desc: Deploy scenario-10-cicd
     cmds:
       - terraform -chdir=scenario-10-cicd init -input=false
       - terraform -chdir=scenario-10-cicd apply -auto-approve
 
   scenario-10:down:
-    desc: Destroy scenario-10-cicd
     cmds:
       - terraform -chdir=scenario-10-cicd destroy -auto-approve
