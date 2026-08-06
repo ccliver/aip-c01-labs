@@ -67,14 +67,14 @@ task shared:up
 # Deploy a single scenario  (terraform init + apply)
 task scenario-01:up
 
-# Preview changes without applying
-task scenario-02:plan       # auto-deploys scenario-01 first if state is absent
+# Deploy a dependent scenario  (auto-deploys scenario-01 first if state is absent)
+task scenario-02:up
 
 # Tear down a scenario
 task scenario-03:down
 ```
 
-Available tasks follow the pattern `scenario-NN:{plan,up,down}` for each of the ten
+Available tasks follow the pattern `scenario-NN:{up,down}` for each of the ten
 scenarios. Scenarios 02, 03, 06, and 09 check for scenario-01 state before running
 and deploy it automatically if it is absent; scenario-06 also auto-deploys scenario-04.
 
