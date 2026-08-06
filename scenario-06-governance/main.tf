@@ -319,6 +319,11 @@ resource "aws_glue_catalog_table" "kb_corpus_chunks" {
 # excluding unrelated account noise. PII detection has no native equivalent
 # (no per-entity-type breakdown, nothing for Comprehend's separate path), so
 # it stays a custom metric grouped dynamically via the verified SEARCH form.
+# The scenario-07 token-cost probe (scripts/bedrock_token_metrics.py) is the
+# same story — AWS/Bedrock has no per-UseCase breakdown of token counts — so
+# its InputTokens/OutputTokens also stay custom, grouped via the verified
+# SEARCH form rather than a literal tuple, since UseCase is a free-form CLI
+# arg and shouldn't be hardcoded into the dashboard.
 resource "aws_cloudwatch_dashboard" "aip_c01_governance" {
   dashboard_name = "aip-c01-governance"
 
@@ -391,6 +396,22 @@ resource "aws_cloudwatch_dashboard" "aip_c01_governance" {
             ["AIP-C01/Lab", "ChunkSize", "Scenario", "01", { stat = "Average" }],
             ["AIP-C01/Lab", "RetrievalHits", "Scenario", "03", "Stage", "variant", { stat = "Sum" }],
             ["AIP-C01/Lab", "RetrievalHits", "Scenario", "03", "Stage", "dedup", { stat = "Sum" }],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 12
+        width  = 24
+        height = 6
+        properties = {
+          title  = "Token usage — scenario-07 cost probes (custom, per model/use-case)"
+          region = data.aws_region.current.region
+          view   = "timeSeries"
+          metrics = [
+            [{ expression = "SEARCH('Namespace=\"AIP-C01/Lab\" MetricName=\"InputTokens\"', 'Sum', 300)", id = "e1" }],
+            [{ expression = "SEARCH('Namespace=\"AIP-C01/Lab\" MetricName=\"OutputTokens\"', 'Sum', 300)", id = "e2" }],
           ]
         }
       },
